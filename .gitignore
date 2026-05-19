@@ -1,0 +1,62 @@
+# Git
+.git
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# 文档
+*.md
+!README.md
+docs/
+
+# 测试
+*_test.go
+test/
+tests/
+*_test
+
+# 本地配置文件（敏感信息）
+.env
+.env.local
+.env.*.local
+config.local.yaml
+configs/config.local.yaml
+
+# 日志
+logs/
+*.log
+
+# 构建产物
+bin/
+dist/
+build/
+
+# 临时文件
+tmp/
+temp/
+*.tmp
+
+# 评估脚本
+eval/
+
+# 本地数据
+data/
+nianbao/
+
+# Docker 相关
+docker-compose*.yaml
+Dockerfile*
+.dockerignore
+
+# 特定文件
+go-install/
+*.tar.gz
+*.zip
+
+# 测试文件
+test_supabase.go
