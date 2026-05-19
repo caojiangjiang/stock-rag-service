@@ -1,0 +1,380 @@
+{
+  "dataset": [
+    {
+      "id": 1,
+      "session_id": "agent-test-1",
+      "type": "单轮工具调用",
+      "turns": [
+        {
+          "task": "帮我查贵州茅台 2024 年研发费用"
+        }
+      ],
+      "expected_tools": ["search_reports"],
+      "expected_slots": {
+        "stock_code": "600519",
+        "time_range": "1y",
+        "doc_types": ["report"]
+      },
+      "must_refuse": false,
+      "must_cite": true,
+      "gold_doc_title": "茅台_24_年度.pdf",
+      "gold_section_title": "财务报表附注",
+      "success_criteria": ["研发费用", "2024", "贵州茅台"]
+    },
+    {
+      "id": 2,
+      "session_id": "agent-test-2",
+      "type": "单轮工具调用",
+      "turns": [
+        {
+          "task": "宁德时代 2024 年的营业收入是多少"
+        }
+      ],
+      "expected_tools": ["search_reports"],
+      "expected_slots": {
+        "stock_code": "300750",
+        "time_range": "1y",
+        "doc_types": ["report"]
+      },
+      "must_refuse": false,
+      "must_cite": true,
+      "gold_doc_title": "宁德时代_24_年终.pdf",
+      "gold_section_title": "主营业务分析",
+      "success_criteria": ["营业收入", "2024", "宁德时代"]
+    },
+    {
+      "id": 3,
+      "session_id": "agent-test-3",
+      "type": "单轮工具调用",
+      "turns": [
+        {
+          "task": "比亚迪 2024 年的净利润是多少"
+        }
+      ],
+      "expected_tools": ["search_reports"],
+      "expected_slots": {
+        "stock_code": "002594",
+        "time_range": "1y",
+        "doc_types": ["report"]
+      },
+      "must_refuse": false,
+      "must_cite": true,
+      "gold_doc_title": "byd_24_年终.pdf",
+      "gold_section_title": "财务报表",
+      "success_criteria": ["净利润", "2024", "比亚迪"]
+    },
+    {
+      "id": 4,
+      "session_id": "agent-test-4",
+      "type": "单轮工具调用",
+      "turns": [
+        {
+          "task": "贵州茅台 2023 年 vs 2024 年的营收变化"
+        }
+      ],
+      "expected_tools": ["compare_years"],
+      "expected_slots": {
+        "stock_code": "600519",
+        "time_range": "2y",
+        "doc_types": ["report"],
+        "compare_years": ["2023", "2024"]
+      },
+      "must_refuse": false,
+      "must_cite": true,
+      "gold_doc_title": "茅台_24_年度.pdf",
+      "gold_section_title": "财务报表",
+      "success_criteria": ["营收变化", "2023", "2024", "贵州茅台"]
+    },
+    {
+      "id": 5,
+      "session_id": "agent-test-5",
+      "type": "单轮工具调用",
+      "turns": [
+        {
+          "task": "宁德时代的主营业务是什么"
+        }
+      ],
+      "expected_tools": ["search_reports"],
+      "expected_slots": {
+        "stock_code": "300750",
+        "time_range": "1y",
+        "doc_types": ["report"]
+      },
+      "must_refuse": false,
+      "must_cite": true,
+      "gold_doc_title": "宁德时代_24_年终.pdf",
+      "gold_section_title": "公司业务概要",
+      "success_criteria": ["主营业务", "宁德时代"]
+    },
+    {
+      "id": 6,
+      "session_id": "agent-test-6",
+      "type": "单轮工具调用",
+      "turns": [
+        {
+          "task": "比亚迪的核心竞争力有哪些"
+        }
+      ],
+      "expected_tools": ["search_reports"],
+      "expected_slots": {
+        "stock_code": "002594",
+        "time_range": "1y",
+        "doc_types": ["report"]
+      },
+      "must_refuse": false,
+      "must_cite": true,
+      "gold_doc_title": "byd_24_年终.pdf",
+      "gold_section_title": "核心竞争力分析",
+      "success_criteria": ["核心竞争力", "比亚迪"]
+    },
+    {
+      "id": 7,
+      "session_id": "agent-test-7",
+      "type": "多轮记忆",
+      "turns": [
+        {
+          "task": "帮我看贵州茅台 2024 年营收"
+        },
+        {
+          "task": "那净利润呢？"
+        },
+        {
+          "task": "和 2023 年比一下"
+        }
+      ],
+      "expected_tools": ["search_reports", "search_reports", "compare_years"],
+      "expected_slots": {
+        "stock_code": "600519",
+        "time_range": "2y",
+        "doc_types": ["report"],
+        "compare_years": ["2023", "2024"]
+      },
+      "must_refuse": false,
+      "must_cite": true,
+      "gold_doc_title": "茅台_24_年度.pdf",
+      "gold_section_title": "财务报表",
+      "success_criteria": ["营收", "净利润", "2023", "2024", "贵州茅台", "对比"]
+    },
+    {
+      "id": 8,
+      "session_id": "agent-test-8",
+      "type": "多轮记忆",
+      "turns": [
+        {
+          "task": "宁德时代 2024 年的研发投入情况"
+        },
+        {
+          "task": "研发人员有多少？"
+        },
+        {
+          "task": "和 2023 年相比有什么变化"
+        }
+      ],
+      "expected_tools": ["search_reports", "search_reports", "compare_years"],
+      "expected_slots": {
+        "stock_code": "300750",
+        "time_range": "2y",
+        "doc_types": ["report"],
+        "compare_years": ["2023", "2024"]
+      },
+      "must_refuse": false,
+      "must_cite": true,
+      "gold_doc_title": "宁德时代_24_年终.pdf",
+      "gold_section_title": "研发投入",
+      "success_criteria": ["研发投入", "研发人员", "2023", "2024", "宁德时代", "对比"]
+    },
+    {
+      "id": 9,
+      "session_id": "agent-test-9",
+      "type": "多轮记忆",
+      "turns": [
+        {
+          "task": "比亚迪 2024 年的海外收入占比"
+        },
+        {
+          "task": "国内收入呢？"
+        },
+        {
+          "task": "和 2023 年比一下"
+        }
+      ],
+      "expected_tools": ["search_reports", "search_reports", "compare_years"],
+      "expected_slots": {
+        "stock_code": "002594",
+        "time_range": "2y",
+        "doc_types": ["report"],
+        "compare_years": ["2023", "2024"]
+      },
+      "must_refuse": false,
+      "must_cite": true,
+      "gold_doc_title": "byd_24_年终.pdf",
+      "gold_section_title": "主营业务分析",
+      "success_criteria": ["海外收入", "国内收入", "2023", "2024", "比亚迪", "对比"]
+    },
+    {
+      "id": 10,
+      "session_id": "agent-test-10",
+      "type": "多轮记忆",
+      "turns": [
+        {
+          "task": "贵州茅台的市场竞争优势"
+        },
+        {
+          "task": "具体体现在哪些方面？"
+        },
+        {
+          "task": "这些信息出自哪一章节"
+        }
+      ],
+      "expected_tools": ["search_reports", "search_reports", "search_reports"],
+      "expected_slots": {
+        "stock_code": "600519",
+        "time_range": "1y",
+        "doc_types": ["report"]
+      },
+      "must_refuse": false,
+      "must_cite": true,
+      "gold_doc_title": "茅台_24_年度.pdf",
+      "gold_section_title": "核心竞争力分析",
+      "success_criteria": ["市场竞争优势", "核心竞争力", "贵州茅台", "章节"]
+    },
+    {
+      "id": 11,
+      "session_id": "agent-test-11",
+      "type": "复杂任务拆解",
+      "turns": [
+        {
+          "task": "先总结宁德时代 2024 年研发投入，再和 2023 年对比，并说明出自哪一章节"
+        }
+      ],
+      "expected_tools": ["search_reports", "compare_years", "search_reports"],
+      "expected_slots": {
+        "stock_code": "300750",
+        "time_range": "2y",
+        "doc_types": ["report"],
+        "compare_years": ["2023", "2024"]
+      },
+      "must_refuse": false,
+      "must_cite": true,
+      "gold_doc_title": "宁德时代_24_年终.pdf",
+      "gold_section_title": "研发投入",
+      "success_criteria": ["研发投入", "2023", "2024", "对比", "章节", "宁德时代"]
+    },
+    {
+      "id": 12,
+      "session_id": "agent-test-12",
+      "type": "复杂任务拆解",
+      "turns": [
+        {
+          "task": "总结比亚迪 2024 年的核心竞争力，然后和宁德时代对比，并说明信息来源"
+        }
+      ],
+      "expected_tools": ["search_reports", "search_reports", "compare_years"],
+      "expected_slots": {
+        "stock_code": "002594",
+        "time_range": "1y",
+        "doc_types": ["report"]
+      },
+      "must_refuse": false,
+      "must_cite": true,
+      "gold_doc_title": "byd_24_年终.pdf",
+      "gold_section_title": "核心竞争力分析",
+      "success_criteria": ["核心竞争力", "比亚迪", "宁德时代", "对比", "信息来源"]
+    },
+    {
+      "id": 13,
+      "session_id": "agent-test-13",
+      "type": "复杂任务拆解",
+      "turns": [
+        {
+          "task": "分析贵州茅台 2024 年的财务状况，包括营收、净利润、毛利率，并说明出自哪些章节"
+        }
+      ],
+      "expected_tools": ["search_reports"],
+      "expected_slots": {
+        "stock_code": "600519",
+        "time_range": "1y",
+        "doc_types": ["report"]
+      },
+      "must_refuse": false,
+      "must_cite": true,
+      "gold_doc_title": "茅台_24_年度.pdf",
+      "gold_section_title": "财务报表",
+      "success_criteria": ["营收", "净利润", "毛利率", "贵州茅台", "章节"]
+    },
+    {
+      "id": 14,
+      "session_id": "agent-test-14",
+      "type": "拒答与澄清",
+      "turns": [
+        {
+          "task": "贵州茅台 2026 年的营收预测是多少"
+        }
+      ],
+      "expected_tools": [],
+      "expected_slots": {
+        "stock_code": "600519"
+      },
+      "must_refuse": true,
+      "must_cite": false,
+      "gold_doc_title": null,
+      "gold_section_title": null,
+      "success_criteria": ["未提及", "无法回答", "预测"]
+    },
+    {
+      "id": 15,
+      "session_id": "agent-test-15",
+      "type": "拒答与澄清",
+      "turns": [
+        {
+          "task": "宁德时代的股票明天会涨吗"
+        }
+      ],
+      "expected_tools": [],
+      "expected_slots": {
+        "stock_code": "300750"
+      },
+      "must_refuse": true,
+      "must_cite": false,
+      "gold_doc_title": null,
+      "gold_section_title": null,
+      "success_criteria": ["未提及", "无法回答", "预测"]
+    },
+    {
+      "id": 16,
+      "session_id": "agent-test-16",
+      "type": "拒答与澄清",
+      "turns": [
+        {
+          "task": "比亚迪的 CEO 是谁"
+        }
+      ],
+      "expected_tools": [],
+      "expected_slots": {
+        "stock_code": "002594"
+      },
+      "must_refuse": true,
+      "must_cite": false,
+      "gold_doc_title": null,
+      "gold_section_title": null,
+      "success_criteria": ["未提及", "无法回答", "CEO"]
+    },
+    {
+      "id": 17,
+      "session_id": "agent-test-17",
+      "type": "拒答与澄清",
+      "turns": [
+        {
+          "task": "帮我分析一下 2020 年的财务数据"
+        }
+      ],
+      "expected_tools": [],
+      "expected_slots": {},
+      "must_refuse": true,
+      "must_cite": false,
+      "gold_doc_title": null,
+      "gold_section_title": null,
+      "success_criteria": ["未提及", "无法回答", "2020"]
+    }
+  ]
+}

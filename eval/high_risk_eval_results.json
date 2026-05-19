@@ -1,0 +1,514 @@
+{
+  "meta": {
+    "dataset": "eval/high_risk_eval_dataset.json",
+    "api_url": "http://localhost:18082/rag/query",
+    "top_k": 5,
+    "local_only": true,
+    "evaluated_at": 1778574455
+  },
+  "summary": {
+    "total": 16,
+    "passed": 16,
+    "failed": 0,
+    "pass_rate": 1.0,
+    "avg_response_time": 11.0992,
+    "by_behavior": {
+      "REFUSE": {
+        "total": 7,
+        "passed": 7
+      },
+      "ANSWER": {
+        "total": 9,
+        "passed": 9
+      }
+    },
+    "by_dimension": {
+      "YEAR_CONSISTENCY": {
+        "total": 3,
+        "passed": 3
+      },
+      "METRIC_CONSISTENCY": {
+        "total": 3,
+        "passed": 3
+      },
+      "FACTUAL_QA": {
+        "total": 2,
+        "passed": 2
+      },
+      "COMPANY_ALIGNMENT": {
+        "total": 5,
+        "passed": 5
+      },
+      "SAFE_REFUSAL": {
+        "total": 3,
+        "passed": 3
+      }
+    },
+    "top_failure_reasons": []
+  },
+  "results": [
+    {
+      "id": "moutai_2025_net_profit_refuse",
+      "question": "茅台2025年盈利多少钱？",
+      "expected_behavior": "REFUSE",
+      "eval_dimension": "YEAR_CONSISTENCY",
+      "passed": true,
+      "score": 1.0,
+      "reasons": [],
+      "detail": {
+        "refusal_detected": true,
+        "keyword_hit": {
+          "hit": 3,
+          "total": 3
+        }
+      },
+      "response_time": 7.2099,
+      "response": {
+        "answer": "当前检索证据不足，无法直接回答2025年净利润。当前没有检索到可直接支撑该约束的资料。请补充对应年度报告、业绩预告或相关公告后再回答。",
+        "citations": [],
+        "retrieved_count": 0,
+        "request_id": "rag-600519-13"
+      }
+    },
+    {
+      "id": "moutai_2024_net_profit_answer",
+      "question": "茅台2024年净利润是多少？",
+      "expected_behavior": "ANSWER",
+      "eval_dimension": "METRIC_CONSISTENCY",
+      "passed": true,
+      "score": 1.0,
+      "reasons": [],
+      "detail": {
+        "value_match": true,
+        "keyword_hit": {
+          "hit": 2,
+          "total": 2
+        },
+        "citation_match": true
+      },
+      "response_time": 8.9867,
+      "response": {
+        "answer": "贵州茅台（600519）2024年归属于母公司所有者的净利润为875.54亿元，同比增长17.23%。\n引用来源：\n[1] 贵州茅台2024年年度报告相关公开信息\n[2] 贵州茅台2024年年度报告第三节管理层讨论与分析",
+        "citations": [
+          {
+            "title": "贵州茅台2024年业绩超预期",
+            "doc_type": "news",
+            "source_url": "https://testdata.local/600519/news/2024-results",
+            "published_at": "2025-03-29",
+            "content": "贵州茅台发布2024年年度报告，全年营收突破1500亿元大关，达到1555.39亿元，同比增长15.51%。净利润875.54亿元，同比增长17.23%，每股收益67.84元。市场分析人士认为，茅台在高端白酒市场的龙头地位稳固，业绩表现超出市场预期。"
+          },
+          {
+            "title": "贵州茅台酒股份有限公司2024年年度报告",
+            "doc_type": "report",
+            "source_url": "https://testdata.local/600519/report/annual-2024",
+            "published_at": "2025-03-28",
+            "content": "第三节 管理层讨论与分析\n一、经营情况讨论与分析\n（一）营业收入\n报告期内，公司实现营业总收入1,555.39亿元，同比增长15.51%。其中：\n- 茅台酒营业收入1,326.55亿元，同比增长18.24%；\n- 系列酒营业收入228.84亿元，同比增长3.62%。\n\n（二）净利润\n归属于母公司所有者的净利润875.54亿元，同比增长17.23%。\n\n（三）主要财务指标\n- 基本每股收益67.84元\n- 净资产收益率32.54%\n- 经营活动产生的现金流量净额884.26亿元"
+          }
+        ],
+        "retrieved_count": 2,
+        "request_id": "rag-600519-14"
+      }
+    },
+    {
+      "id": "moutai_2024_revenue_answer",
+      "question": "茅台2024年营收是多少？",
+      "expected_behavior": "ANSWER",
+      "eval_dimension": "METRIC_CONSISTENCY",
+      "passed": true,
+      "score": 1.0,
+      "reasons": [],
+      "detail": {
+        "value_match": true,
+        "keyword_hit": {
+          "hit": 1,
+          "total": 2
+        },
+        "citation_match": true
+      },
+      "response_time": 10.3492,
+      "response": {
+        "answer": "贵州茅台（600519）2024年营业收入为1555.39亿元，同比增长15.51%。\n引用来源：\n[1] 贵州茅台2024年年度报告公开披露信息\n[2] 贵州茅台2024年年度报告第三节管理层讨论与分析",
+        "citations": [
+          {
+            "title": "贵州茅台2024年业绩超预期",
+            "doc_type": "news",
+            "source_url": "https://testdata.local/600519/news/2024-results",
+            "published_at": "2025-03-29",
+            "content": "贵州茅台发布2024年年度报告，全年营收突破1500亿元大关，达到1555.39亿元，同比增长15.51%。净利润875.54亿元，同比增长17.23%，每股收益67.84元。市场分析人士认为，茅台在高端白酒市场的龙头地位稳固，业绩表现超出市场预期。"
+          },
+          {
+            "title": "贵州茅台酒股份有限公司2024年年度报告",
+            "doc_type": "report",
+            "source_url": "https://testdata.local/600519/report/annual-2024",
+            "published_at": "2025-03-28",
+            "content": "第三节 管理层讨论与分析\n一、经营情况讨论与分析\n（一）营业收入\n报告期内，公司实现营业总收入1,555.39亿元，同比增长15.51%。其中：\n- 茅台酒营业收入1,326.55亿元，同比增长18.24%；\n- 系列酒营业收入228.84亿元，同比增长3.62%。\n\n（二）净利润\n归属于母公司所有者的净利润875.54亿元，同比增长17.23%。\n\n（三）主要财务指标\n- 基本每股收益67.84元\n- 净资产收益率32.54%\n- 经营活动产生的现金流量净额884.26亿元"
+          }
+        ],
+        "retrieved_count": 2,
+        "request_id": "rag-600519-13"
+      }
+    },
+    {
+      "id": "moutai_2024_eps_answer",
+      "question": "贵州茅台2024年每股收益是多少？",
+      "expected_behavior": "ANSWER",
+      "eval_dimension": "FACTUAL_QA",
+      "passed": true,
+      "score": 1.0,
+      "reasons": [],
+      "detail": {
+        "value_match": true,
+        "keyword_hit": {
+          "hit": 2,
+          "total": 2
+        },
+        "citation_match": true
+      },
+      "response_time": 33.3805,
+      "response": {
+        "answer": "根据检索到的资料，2024年每股收益为67.84元。\n引用来源：[1] 贵州茅台酒股份有限公司2024年年度报告",
+        "citations": [
+          {
+            "title": "贵州茅台酒股份有限公司2024年年度报告",
+            "doc_type": "report",
+            "source_url": "https://testdata.local/600519/report/annual-2024",
+            "published_at": "2025-03-28",
+            "content": "第三节 管理层讨论与分析\n一、经营情况讨论与分析\n（一）营业收入\n报告期内，公司实现营业总收入1,555.39亿元，同比增长15.51%。其中：\n- 茅台酒营业收入1,326.55亿元，同比增长18.24%；\n- 系列酒营业收入228.84亿元，同比增长3.62%。\n\n（二）净利润\n归属于母公司所有者的净利润875.54亿元，同比增长17.23%。\n\n（三）主要财务指标\n- 基本每股收益67.84元\n- 净资产收益率32.54%\n- 经营活动产生的现金流量净额884.26亿元"
+          }
+        ],
+        "retrieved_count": 1,
+        "request_id": "rag-600519-17"
+      }
+    },
+    {
+      "id": "moutai_2024_operating_cashflow_answer",
+      "question": "贵州茅台2024年经营活动产生的现金流量净额是多少？",
+      "expected_behavior": "ANSWER",
+      "eval_dimension": "FACTUAL_QA",
+      "passed": true,
+      "score": 1.0,
+      "reasons": [],
+      "detail": {
+        "value_match": true,
+        "keyword_hit": {
+          "hit": 2,
+          "total": 2
+        },
+        "citation_match": true
+      },
+      "response_time": 21.9157,
+      "response": {
+        "answer": "贵州茅台2024年经营活动产生的现金流量净额为884.26亿元。\n引用来源：[1] 第三节 管理层讨论与分析 一、经营情况讨论与分析 （三）主要财务指标",
+        "citations": [
+          {
+            "title": "贵州茅台酒股份有限公司2024年年度报告",
+            "doc_type": "report",
+            "source_url": "https://testdata.local/600519/report/annual-2024",
+            "published_at": "2025-03-28",
+            "content": "第三节 管理层讨论与分析\n一、经营情况讨论与分析\n（一）营业收入\n报告期内，公司实现营业总收入1,555.39亿元，同比增长15.51%。其中：\n- 茅台酒营业收入1,326.55亿元，同比增长18.24%；\n- 系列酒营业收入228.84亿元，同比增长3.62%。\n\n（二）净利润\n归属于母公司所有者的净利润875.54亿元，同比增长17.23%。\n\n（三）主要财务指标\n- 基本每股收益67.84元\n- 净资产收益率32.54%\n- 经营活动产生的现金流量净额884.26亿元"
+          }
+        ],
+        "retrieved_count": 1,
+        "request_id": "rag-600519-26"
+      }
+    },
+    {
+      "id": "moutai_recent_channel_cashflow_answer",
+      "question": "贵州茅台最近渠道和现金流表现怎么样？",
+      "expected_behavior": "ANSWER",
+      "eval_dimension": "COMPANY_ALIGNMENT",
+      "passed": true,
+      "score": 1.0,
+      "reasons": [],
+      "detail": {
+        "value_match": true,
+        "keyword_hit": {
+          "hit": 3,
+          "total": 3
+        },
+        "citation_match": true
+      },
+      "response_time": 11.6492,
+      "response": {
+        "answer": "现有检索资料仅披露：贵州茅台相关季报显示其高端产品收入保持稳健增长，渠道与现金流表现受到投资者关注<引用来源：[1]>，暂未查询到近90天贵州茅台渠道、现金流表现的具体对应数据，无法给出相关具体结论。",
+        "citations": [
+          {
+            "title": "贵州茅台季报摘要：高端产品收入稳健",
+            "doc_type": "report",
+            "source_url": "https://testdata.local/600519/report/quarterly-summary",
+            "published_at": "2026-03-01",
+            "content": "季报摘要显示，贵州茅台高端产品收入保持稳健增长，渠道与现金流表现受到投资者关注。"
+          }
+        ],
+        "retrieved_count": 1,
+        "request_id": "rag-600519-18"
+      }
+    },
+    {
+      "id": "catl_hshare_listing_answer",
+      "question": "宁德时代港股上市进展怎么样？",
+      "expected_behavior": "ANSWER",
+      "eval_dimension": "COMPANY_ALIGNMENT",
+      "passed": true,
+      "score": 1.0,
+      "reasons": [],
+      "detail": {
+        "value_match": true,
+        "keyword_hit": {
+          "hit": 3,
+          "total": 3
+        },
+        "citation_match": true
+      },
+      "response_time": 11.7998,
+      "response": {
+        "answer": "根据宁德时代近90天内披露的公告，目前公司正在筹划发行境外上市外资股（H股）股票并申请在香港联合交易所有限公司主板挂牌上市，本次发行募集资金将重点用于海外产能布局、国际业务拓展与境外营运资金补充，暂。\n引用来源：[1] 宁德时代公告：筹划发行 H 股并申请在港交所上市",
+        "citations": [
+          {
+            "title": "宁德时代公告：筹划发行 H 股并申请在港交所上市",
+            "doc_type": "announcement",
+            "source_url": "https://testdata.local/300750/announcement/h-share-listing",
+            "published_at": "2026-03-08",
+            "content": "宁德时代公告称，公司正在筹划发行境外上市外资股（H 股）股票并申请在香港联合交易所有限公司主板挂牌上市，募集资金将重点用于海外产能布局、国际业务拓展与境外营运资金补充。"
+          }
+        ],
+        "retrieved_count": 1,
+        "request_id": "rag-300750-14"
+      }
+    },
+    {
+      "id": "catl_battery_swap_answer",
+      "question": "宁德时代换电网络进展怎么样？",
+      "expected_behavior": "ANSWER",
+      "eval_dimension": "COMPANY_ALIGNMENT",
+      "passed": true,
+      "score": 1.0,
+      "reasons": [],
+      "detail": {
+        "value_match": true,
+        "keyword_hit": {
+          "hit": 3,
+          "total": 3
+        },
+        "citation_match": true
+      },
+      "response_time": 10.1429,
+      "response": {
+        "answer": "现有90天内的公开新闻资料显示，宁德时代正继续推进换电网络与电池服务生态合作，相关动作被市场视为其储能和出行服务布局的延伸，暂。\n引用来源：[1] 宁德时代与多家车企推进换电生态合作",
+        "citations": [
+          {
+            "title": "宁德时代与多家车企推进换电生态合作",
+            "doc_type": "news",
+            "source_url": "https://testdata.local/300750/news/battery-swap-cooperation",
+            "published_at": "2026-03-05",
+            "content": "近期多家媒体报道，宁德时代正继续推进换电网络与电池服务生态合作，相关动作被市场视为其储能和出行服务布局的延伸。"
+          }
+        ],
+        "retrieved_count": 1,
+        "request_id": "rag-300750-14"
+      }
+    },
+    {
+      "id": "byd_buyback_answer",
+      "question": "比亚迪回购进展怎么样？",
+      "expected_behavior": "ANSWER",
+      "eval_dimension": "COMPANY_ALIGNMENT",
+      "passed": true,
+      "score": 1.0,
+      "reasons": [],
+      "detail": {
+        "value_match": true,
+        "keyword_hit": {
+          "hit": 2,
+          "total": 3
+        },
+        "citation_match": true
+      },
+      "response_time": 11.6698,
+      "response": {
+        "answer": "根据比亚迪近90天内披露的回购进展公告，其回购计划仍在实施过程中，后续将根据市场情况继续推进。\n引用来源：[1]",
+        "citations": [
+          {
+            "title": "比亚迪公告：股份回购进展更新",
+            "doc_type": "announcement",
+            "source_url": "https://testdata.local/002594/announcement/buyback-progress",
+            "published_at": "2026-03-07",
+            "content": "比亚迪披露了最新股份回购进展，表示回购计划仍在实施过程中，后续将根据市场情况继续推进。"
+          }
+        ],
+        "retrieved_count": 1,
+        "request_id": "rag-002594-11"
+      }
+    },
+    {
+      "id": "byd_overseas_expansion_answer",
+      "question": "比亚迪海外市场布局情况如何？",
+      "expected_behavior": "ANSWER",
+      "eval_dimension": "COMPANY_ALIGNMENT",
+      "passed": true,
+      "score": 1.0,
+      "reasons": [],
+      "detail": {
+        "value_match": true,
+        "keyword_hit": {
+          "hit": 4,
+          "total": 4
+        },
+        "citation_match": true
+      },
+      "response_time": 10.0352,
+      "response": {
+        "answer": "根据近90天公开新闻信息，比亚迪当前在多个海外市场持续推进渠道建设与车型投放，其出口与全球化布局受到市场关注[1]。目前公开可查的近90天相关新闻。\n引用来源：[1] 比亚迪海外市场扩张继续提速",
+        "citations": [
+          {
+            "title": "比亚迪海外市场扩张继续提速",
+            "doc_type": "news",
+            "source_url": "https://testdata.local/002594/news/overseas-expansion",
+            "published_at": "2026-03-02",
+            "content": "近期新闻显示，比亚迪在多个海外市场继续推进渠道建设与车型投放，出口与全球化布局受到关注。"
+          }
+        ],
+        "retrieved_count": 1,
+        "request_id": "rag-002594-14"
+      }
+    },
+    {
+      "id": "moutai_2027_profit_forecast_refuse",
+      "question": "茅台2027年盈利预测是多少？",
+      "expected_behavior": "REFUSE",
+      "eval_dimension": "SAFE_REFUSAL",
+      "passed": true,
+      "score": 1.0,
+      "reasons": [],
+      "detail": {
+        "refusal_detected": true,
+        "keyword_hit": {
+          "hit": 2,
+          "total": 3
+        }
+      },
+      "response_time": 5.0173,
+      "response": {
+        "answer": "当前检索证据不足，无法直接回答2027年净利润。当前没有检索到可直接支撑该约束的资料。请补充对应年度报告、业绩预告或相关公告后再回答。",
+        "citations": [],
+        "retrieved_count": 0,
+        "request_id": "rag-600519-15"
+      }
+    },
+    {
+      "id": "moutai_2023_net_profit_refuse",
+      "question": "茅台2023年净利润是多少？",
+      "expected_behavior": "REFUSE",
+      "eval_dimension": "SAFE_REFUSAL",
+      "passed": true,
+      "score": 1.0,
+      "reasons": [],
+      "detail": {
+        "refusal_detected": true,
+        "keyword_hit": {
+          "hit": 2,
+          "total": 3
+        }
+      },
+      "response_time": 8.4996,
+      "response": {
+        "answer": "当前检索证据不足，无法直接回答2023年净利润。当前没有检索到可直接支撑该约束的资料。请补充对应年度报告、业绩预告或相关公告后再回答。",
+        "citations": [],
+        "retrieved_count": 0,
+        "request_id": "rag-600519-14"
+      }
+    },
+    {
+      "id": "catl_2024_revenue_refuse",
+      "question": "宁德时代2024年营收是多少？",
+      "expected_behavior": "REFUSE",
+      "eval_dimension": "METRIC_CONSISTENCY",
+      "passed": true,
+      "score": 1.0,
+      "reasons": [],
+      "detail": {
+        "refusal_detected": true,
+        "keyword_hit": {
+          "hit": 2,
+          "total": 3
+        }
+      },
+      "response_time": 5.9398,
+      "response": {
+        "answer": "当前检索证据不足，无法直接回答2024年营业收入。当前没有检索到可直接支撑该约束的资料。请补充对应年度报告、业绩预告或相关公告后再回答。",
+        "citations": [],
+        "retrieved_count": 0,
+        "request_id": "rag-300750-15"
+      }
+    },
+    {
+      "id": "byd_2024_net_profit_refuse",
+      "question": "比亚迪2024年净利润是多少？",
+      "expected_behavior": "REFUSE",
+      "eval_dimension": "SAFE_REFUSAL",
+      "passed": true,
+      "score": 1.0,
+      "reasons": [],
+      "detail": {
+        "refusal_detected": true,
+        "keyword_hit": {
+          "hit": 1,
+          "total": 3
+        }
+      },
+      "response_time": 4.3,
+      "response": {
+        "answer": "当前检索证据不足，无法直接回答2024年净利润。当前没有检索到可直接支撑该约束的资料。请补充对应年度报告、业绩预告或相关公告后再回答。",
+        "citations": [],
+        "retrieved_count": 0,
+        "request_id": "rag-002594-15"
+      }
+    },
+    {
+      "id": "catl_2025_net_profit_refuse",
+      "question": "宁德时代2025年盈利多少钱？",
+      "expected_behavior": "REFUSE",
+      "eval_dimension": "YEAR_CONSISTENCY",
+      "passed": true,
+      "score": 1.0,
+      "reasons": [],
+      "detail": {
+        "refusal_detected": true,
+        "keyword_hit": {
+          "hit": 3,
+          "total": 3
+        }
+      },
+      "response_time": 8.05,
+      "response": {
+        "answer": "当前检索证据不足，无法直接回答2025年净利润。当前没有检索到可直接支撑该约束的资料。请补充对应年度报告、业绩预告或相关公告后再回答。",
+        "citations": [],
+        "retrieved_count": 0,
+        "request_id": "rag-300750-15"
+      }
+    },
+    {
+      "id": "byd_2025_net_profit_refuse",
+      "question": "比亚迪2025年盈利多少钱？",
+      "expected_behavior": "REFUSE",
+      "eval_dimension": "YEAR_CONSISTENCY",
+      "passed": true,
+      "score": 1.0,
+      "reasons": [],
+      "detail": {
+        "refusal_detected": true,
+        "keyword_hit": {
+          "hit": 3,
+          "total": 3
+        }
+      },
+      "response_time": 8.6415,
+      "response": {
+        "answer": "当前检索证据不足，无法直接回答2025年净利润。当前没有检索到可直接支撑该约束的资料。请补充对应年度报告、业绩预告或相关公告后再回答。",
+        "citations": [],
+        "retrieved_count": 0,
+        "request_id": "rag-002594-14"
+      }
+    }
+  ]
+}

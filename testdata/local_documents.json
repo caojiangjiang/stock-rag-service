@@ -1,0 +1,74 @@
+[
+  {
+    "stock_code": "300750",
+    "doc_type": "announcement",
+    "title": "宁德时代公告：筹划发行 H 股并申请在港交所上市",
+    "source_url": "https://testdata.local/300750/announcement/h-share-listing",
+    "published_at": "2026-03-08",
+    "content": "宁德时代公告称，公司正在筹划发行境外上市外资股（H 股）股票并申请在香港联合交易所有限公司主板挂牌上市，募集资金将重点用于海外产能布局、国际业务拓展与境外营运资金补充。",
+    "keywords": ["港股", "上市", "H股", "海外产能"]
+  },
+  {
+    "stock_code": "300750",
+    "doc_type": "news",
+    "title": "宁德时代与多家车企推进换电生态合作",
+    "source_url": "https://testdata.local/300750/news/battery-swap-cooperation",
+    "published_at": "2026-03-05",
+    "content": "近期多家媒体报道，宁德时代正继续推进换电网络与电池服务生态合作，相关动作被市场视为其储能和出行服务布局的延伸。",
+    "keywords": ["换电", "合作", "储能", "生态"]
+  },
+  {
+    "stock_code": "300750",
+    "doc_type": "report",
+    "title": "宁德时代年报摘要：储能业务保持增长",
+    "source_url": "https://testdata.local/300750/report/annual-summary",
+    "published_at": "2026-02-20",
+    "content": "年报摘要显示，公司储能业务收入继续增长，海外收入占比提升，研发投入仍维持较高水平。",
+    "keywords": ["年报", "储能", "海外收入", "研发"]
+  },
+  {
+    "stock_code": "002594",
+    "doc_type": "announcement",
+    "title": "比亚迪公告：股份回购进展更新",
+    "source_url": "https://testdata.local/002594/announcement/buyback-progress",
+    "published_at": "2026-03-07",
+    "content": "比亚迪披露了最新股份回购进展，表示回购计划仍在实施过程中，后续将根据市场情况继续推进。",
+    "keywords": ["回购", "股份", "进展"]
+  },
+  {
+    "stock_code": "002594",
+    "doc_type": "news",
+    "title": "比亚迪海外市场扩张继续提速",
+    "source_url": "https://testdata.local/002594/news/overseas-expansion",
+    "published_at": "2026-03-02",
+    "content": "近期新闻显示，比亚迪在多个海外市场继续推进渠道建设与车型投放，出口与全球化布局受到关注。",
+    "keywords": ["海外", "扩张", "出口", "全球化"]
+  },
+  {
+    "stock_code": "600519",
+    "doc_type": "report",
+    "title": "贵州茅台季报摘要：高端产品收入稳健",
+    "source_url": "https://testdata.local/600519/report/quarterly-summary",
+    "published_at": "2026-03-01",
+    "content": "季报摘要显示，贵州茅台高端产品收入保持稳健增长，渠道与现金流表现受到投资者关注。",
+    "keywords": ["季报", "高端产品", "收入", "现金流"]
+  },
+  {
+    "stock_code": "600519",
+    "doc_type": "report",
+    "title": "贵州茅台酒股份有限公司2024年年度报告",
+    "source_url": "https://testdata.local/600519/report/annual-2024",
+    "published_at": "2025-03-28",
+    "content": "第三节 管理层讨论与分析\n一、经营情况讨论与分析\n（一）营业收入\n报告期内，公司实现营业总收入1,555.39亿元，同比增长15.51%。其中：\n- 茅台酒营业收入1,326.55亿元，同比增长18.24%；\n- 系列酒营业收入228.84亿元，同比增长3.62%。\n\n（二）净利润\n归属于母公司所有者的净利润875.54亿元，同比增长17.23%。\n\n（三）主要财务指标\n- 基本每股收益67.84元\n- 净资产收益率32.54%\n- 经营活动产生的现金流量净额884.26亿元",
+    "keywords": ["年报", "营收", "净利润", "财务指标"]
+  },
+  {
+    "stock_code": "600519",
+    "doc_type": "news",
+    "title": "贵州茅台2024年业绩超预期",
+    "source_url": "https://testdata.local/600519/news/2024-results",
+    "published_at": "2025-03-29",
+    "content": "贵州茅台发布2024年年度报告，全年营收突破1500亿元大关，达到1555.39亿元，同比增长15.51%。净利润875.54亿元，同比增长17.23%，每股收益67.84元。市场分析人士认为，茅台在高端白酒市场的龙头地位稳固，业绩表现超出市场预期。",
+    "keywords": ["业绩", "营收", "净利润", "市场分析"]
+  }
+]

@@ -1,0 +1,78 @@
+# Render Blueprint - Stock RAG Service
+# 免费部署配置
+
+services:
+  # 主服务
+  - type: web
+    name: stock-rag-api
+    runtime: docker
+    region: oregon  # 美西区域，免费套餐支持
+    plan: free  # 免费套餐
+    
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    
+    # 环境变量（在 Render Dashboard 中设置更安全）
+    envVars:
+      - key: PORT
+        value: 8080
+      - key: GO_ENV
+        value: production
+      
+      # 数据库配置（使用 Supabase 或自建 PostgreSQL）
+      - key: DB_HOST
+        sync: false
+      - key: DB_PORT
+        value: 5432
+      - key: DB_USER
+        value: postgres
+      - key: DB_PASSWORD
+        sync: false
+      - key: DB_NAME
+        value: postgres
+      - key: DB_SSLMODE
+        value: require
+      
+      # Redis 配置
+      - key: REDIS_HOST
+        sync: false
+      - key: REDIS_PORT
+        value: 6379
+      - key: REDIS_PASSWORD
+        sync: false
+      - key: REDIS_DB
+        value: 0
+      
+      # API 密钥
+      - key: ARK_API_KEY
+        sync: false
+      - key: ARK_MODEL
+        value: doubao-seed-2-0-pro-260215
+      
+      # JWT 密钥
+      - key: JWT_SECRET
+        generateValue: true
+      
+      # LLM 配置
+      - key: LLM_MAX_QUEUE_SIZE
+        value: 100
+      - key: LLM_MAX_CONCURRENCY
+        value: 10
+      - key: LLM_MAX_WAIT_TIME_MS
+        value: 30000
+      
+      # OTLP 可观测性配置（兼容 GrafanaCloud、Signoz、本地 OTel Collector 等）
+      - key: OTLP_ENDPOINT
+        sync: false
+      - key: OTLP_USER
+        sync: false
+      - key: OTLP_KEY
+        sync: false
+
+  # PostgreSQL 数据库（可选 - 如果不使用 Supabase）
+  # 注意：Render 免费 PostgreSQL 有 90 天过期时间
+  # 建议使用 Supabase 或其他托管数据库
+  # - type: pserv
+  #   name: stock-rag-db
+  #   plan: free
+  #   region: oregon

@@ -1,0 +1,98 @@
+# docker-compose.dev.yaml - 本地开发环境
+# 包含 PostgreSQL（带 pgvector）、Redis 和 Jaeger
+
+version: '3.8'
+
+services:
+  # PostgreSQL 数据库（带 pgvector）
+  postgres:
+    image: ankane/pgvector:latest
+    container_name: stock_rag_postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres123456
+      POSTGRES_DB: stock_rag
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - stock_rag_default
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Redis 缓存
+  redis:
+    image: redis:7-alpine
+    container_name: stock_rag_redis
+    environment:
+      REDIS_PASSWORD: redis123456
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - stock_rag_default
+    command: ["redis-server", "--requirepass", "redis123456"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Jaeger 分布式追踪（支持 OTLP）
+  jaeger:
+    image: jaegertracing/all-in-one:1.57
+    container_name: stock_rag_jaeger
+    ports:
+      - "16686:16686"  # Jaeger UI
+      - "4317:4317"    # OTLP gRPC
+      - "4318:4318"    # OTLP HTTP（我们使用这个）
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+      LOG_LEVEL: info
+    networks:
+      - stock_rag_default
+
+  # 应用服务（可选 - 可以本地运行）
+  app:
+    build: .
+    container_name: stock_rag_app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      jaeger:
+        condition: service_started
+    environment:
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres123456
+      - DB_NAME=stock_rag
+      - DB_SSLMODE=disable
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=redis123456
+      - ARK_API_KEY=${ARK_API_KEY}
+      - ARK_MODEL=doubao-seed-2-0-pro-260215
+      - JWT_SECRET=dev_secret_key_123456
+      - PORT=8080
+      - OTLP_ENDPOINT=http://jaeger:4318/v1/traces
+    ports:
+      - "8080:8080"
+    networks:
+      - stock_rag_default
+    command: ["./main"]
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  stock_rag_default:
+    driver: bridge

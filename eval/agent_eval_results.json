@@ -1,0 +1,629 @@
+{
+  "overall_accuracy": 0.11764705882352941,
+  "metrics": {
+    "tool_selection_accuracy": 0.23529411764705882,
+    "tool_call_count": 0,
+    "redundant_tool_call_rate": 0.0,
+    "stock_code_arg_accuracy": 0.058823529411764705,
+    "time_range_arg_accuracy": 0.23529411764705882,
+    "doc_type_arg_accuracy": 0.23529411764705882,
+    "compare_arg_accuracy": 0.7058823529411765,
+    "slot_retention_accuracy": 0.058823529411764705,
+    "cross_turn_reference_accuracy": 0.058823529411764705,
+    "session_isolation_accuracy": 1.0,
+    "unsupported_refusal_rate": 0.7647058823529411,
+    "hallucination_rate": 0.0,
+    "task_completion_rate": 0.11764705882352941,
+    "subtask_completion_rate": 0.11764705882352941
+  },
+  "results": [
+    {
+      "case_id": 1,
+      "session_id": "agent-test-1",
+      "final_answer": "",
+      "is_success": false,
+      "metrics": {
+        "tool_selection_accuracy": 0.0,
+        "tool_call_count": 0,
+        "redundant_tool_call_rate": 0,
+        "stock_code_arg_accuracy": 0.0,
+        "time_range_arg_accuracy": 0.0,
+        "doc_type_arg_accuracy": 0.0,
+        "compare_arg_accuracy": 1.0,
+        "slot_retention_accuracy": 0.0,
+        "cross_turn_reference_accuracy": 0,
+        "session_isolation_accuracy": 1.0,
+        "unsupported_refusal_rate": 1.0,
+        "hallucination_rate": 0.0,
+        "task_completion_rate": 0.0,
+        "subtask_completion_rate": 0.0
+      },
+      "session_history": [
+        {
+          "turn": 1,
+          "task": "帮我查贵州茅台 2024 年研发费用",
+          "response": {
+            "error": "Request error: HTTPConnectionPool(host='localhost', port=8080): Read timed out. (read timeout=60)"
+          },
+          "slots": {}
+        }
+      ]
+    },
+    {
+      "case_id": 2,
+      "session_id": "agent-test-2",
+      "final_answer": "",
+      "is_success": false,
+      "metrics": {
+        "tool_selection_accuracy": 0.0,
+        "tool_call_count": 0,
+        "redundant_tool_call_rate": 0,
+        "stock_code_arg_accuracy": 0.0,
+        "time_range_arg_accuracy": 0.0,
+        "doc_type_arg_accuracy": 0.0,
+        "compare_arg_accuracy": 1.0,
+        "slot_retention_accuracy": 0.0,
+        "cross_turn_reference_accuracy": 0,
+        "session_isolation_accuracy": 1.0,
+        "unsupported_refusal_rate": 1.0,
+        "hallucination_rate": 0.0,
+        "task_completion_rate": 0.0,
+        "subtask_completion_rate": 0.0
+      },
+      "session_history": [
+        {
+          "turn": 1,
+          "task": "宁德时代 2024 年的营业收入是多少",
+          "response": {
+            "error": "Request error: HTTPConnectionPool(host='localhost', port=8080): Read timed out. (read timeout=60)"
+          },
+          "slots": {}
+        }
+      ]
+    },
+    {
+      "case_id": 3,
+      "session_id": "agent-test-3",
+      "final_answer": "",
+      "is_success": false,
+      "metrics": {
+        "tool_selection_accuracy": 0.0,
+        "tool_call_count": 0,
+        "redundant_tool_call_rate": 0,
+        "stock_code_arg_accuracy": 0.0,
+        "time_range_arg_accuracy": 0.0,
+        "doc_type_arg_accuracy": 0.0,
+        "compare_arg_accuracy": 1.0,
+        "slot_retention_accuracy": 0.0,
+        "cross_turn_reference_accuracy": 0,
+        "session_isolation_accuracy": 1.0,
+        "unsupported_refusal_rate": 1.0,
+        "hallucination_rate": 0.0,
+        "task_completion_rate": 0.0,
+        "subtask_completion_rate": 0.0
+      },
+      "session_history": [
+        {
+          "turn": 1,
+          "task": "比亚迪 2024 年的净利润是多少",
+          "response": {
+            "error": "Request error: HTTPConnectionPool(host='localhost', port=8080): Read timed out. (read timeout=60)"
+          },
+          "slots": {}
+        }
+      ]
+    },
+    {
+      "case_id": 4,
+      "session_id": "agent-test-4",
+      "final_answer": "",
+      "is_success": false,
+      "metrics": {
+        "tool_selection_accuracy": 0.0,
+        "tool_call_count": 0,
+        "redundant_tool_call_rate": 0,
+        "stock_code_arg_accuracy": 0.0,
+        "time_range_arg_accuracy": 0.0,
+        "doc_type_arg_accuracy": 0.0,
+        "compare_arg_accuracy": 0.0,
+        "slot_retention_accuracy": 0.0,
+        "cross_turn_reference_accuracy": 0,
+        "session_isolation_accuracy": 1.0,
+        "unsupported_refusal_rate": 1.0,
+        "hallucination_rate": 0.0,
+        "task_completion_rate": 0.0,
+        "subtask_completion_rate": 0.0
+      },
+      "session_history": [
+        {
+          "turn": 1,
+          "task": "贵州茅台 2023 年 vs 2024 年的营收变化",
+          "response": {
+            "error": "Request error: HTTPConnectionPool(host='localhost', port=8080): Read timed out. (read timeout=60)"
+          },
+          "slots": {}
+        }
+      ]
+    },
+    {
+      "case_id": 5,
+      "session_id": "agent-test-5",
+      "final_answer": "宁德时代（300750.SZ）的主营业务为新能源汽车动力电池系统、储能系统的研发、生产和销售，同时配套布局锂电上游材料研发生产、动力电池回收利用、新能源应用场景解决方案等相关衍生业务，致力于为全球新能源领域提供一流的动力电池、储能电池相关产品及服务。其中动力电池、储能电池是其两大核心业务板块：动力电池业务主要为全球主流车企提供新能源汽车配套的动力锂电池产品；储能业务为户用、工商业、电网侧等各类储能场景提供储能电池系统及配套服务。",
+      "is_success": true,
+      "metrics": {
+        "tool_selection_accuracy": 0.0,
+        "tool_call_count": 0,
+        "redundant_tool_call_rate": 0,
+        "stock_code_arg_accuracy": 0.0,
+        "time_range_arg_accuracy": 0.0,
+        "doc_type_arg_accuracy": 0.0,
+        "compare_arg_accuracy": 1.0,
+        "slot_retention_accuracy": 0.0,
+        "cross_turn_reference_accuracy": 0,
+        "session_isolation_accuracy": 1.0,
+        "unsupported_refusal_rate": 1.0,
+        "hallucination_rate": 0.0,
+        "task_completion_rate": 1.0,
+        "subtask_completion_rate": 1.0
+      },
+      "session_history": [
+        {
+          "turn": 1,
+          "task": "宁德时代的主营业务是什么",
+          "response": {
+            "result": "宁德时代（300750.SZ）的主营业务为新能源汽车动力电池系统、储能系统的研发、生产和销售，同时配套布局锂电上游材料研发生产、动力电池回收利用、新能源应用场景解决方案等相关衍生业务，致力于为全球新能源领域提供一流的动力电池、储能电池相关产品及服务。其中动力电池、储能电池是其两大核心业务板块：动力电池业务主要为全球主流车企提供新能源汽车配套的动力锂电池产品；储能业务为户用、工商业、电网侧等各类储能场景提供储能电池系统及配套服务。"
+          },
+          "slots": {}
+        }
+      ]
+    },
+    {
+      "case_id": 6,
+      "session_id": "agent-test-6",
+      "final_answer": "比亚迪的核心竞争力主要体现在以下几个维度：",
+      "is_success": true,
+      "metrics": {
+        "tool_selection_accuracy": 0.0,
+        "tool_call_count": 0,
+        "redundant_tool_call_rate": 0,
+        "stock_code_arg_accuracy": 0.0,
+        "time_range_arg_accuracy": 0.0,
+        "doc_type_arg_accuracy": 0.0,
+        "compare_arg_accuracy": 1.0,
+        "slot_retention_accuracy": 0.0,
+        "cross_turn_reference_accuracy": 0,
+        "session_isolation_accuracy": 1.0,
+        "unsupported_refusal_rate": 1.0,
+        "hallucination_rate": 0.0,
+        "task_completion_rate": 1.0,
+        "subtask_completion_rate": 1.0
+      },
+      "session_history": [
+        {
+          "turn": 1,
+          "task": "比亚迪的核心竞争力有哪些",
+          "response": {
+            "result": "比亚迪的核心竞争力主要体现在以下几个维度："
+          },
+          "slots": {}
+        }
+      ]
+    },
+    {
+      "case_id": 7,
+      "session_id": "agent-test-7",
+      "final_answer": "",
+      "is_success": false,
+      "metrics": {
+        "tool_selection_accuracy": 0.0,
+        "tool_call_count": 0,
+        "redundant_tool_call_rate": 0,
+        "stock_code_arg_accuracy": 0.0,
+        "time_range_arg_accuracy": 0.0,
+        "doc_type_arg_accuracy": 0.0,
+        "compare_arg_accuracy": 0.0,
+        "slot_retention_accuracy": 0.0,
+        "cross_turn_reference_accuracy": 0,
+        "session_isolation_accuracy": 1.0,
+        "unsupported_refusal_rate": 1.0,
+        "hallucination_rate": 0.0,
+        "task_completion_rate": 0.0,
+        "subtask_completion_rate": 0.0
+      },
+      "session_history": [
+        {
+          "turn": 1,
+          "task": "帮我看贵州茅台 2024 年营收",
+          "response": {
+            "error": "Request error: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))"
+          },
+          "slots": {}
+        },
+        {
+          "turn": 2,
+          "task": "那净利润呢？",
+          "response": {
+            "error": "Request error: HTTPConnectionPool(host='localhost', port=8080): Max retries exceeded with url: /agent/execute (Caused by NewConnectionError(\"HTTPConnection(host='localhost', port=8080): Failed to establish a new connection: [Errno 61] Connection refused\"))"
+          },
+          "slots": {}
+        },
+        {
+          "turn": 3,
+          "task": "和 2023 年比一下",
+          "response": {
+            "error": "Request error: HTTPConnectionPool(host='localhost', port=8080): Max retries exceeded with url: /agent/execute (Caused by NewConnectionError(\"HTTPConnection(host='localhost', port=8080): Failed to establish a new connection: [Errno 61] Connection refused\"))"
+          },
+          "slots": {}
+        }
+      ]
+    },
+    {
+      "case_id": 8,
+      "session_id": "agent-test-8",
+      "final_answer": "",
+      "is_success": false,
+      "metrics": {
+        "tool_selection_accuracy": 0.0,
+        "tool_call_count": 0,
+        "redundant_tool_call_rate": 0,
+        "stock_code_arg_accuracy": 0.0,
+        "time_range_arg_accuracy": 0.0,
+        "doc_type_arg_accuracy": 0.0,
+        "compare_arg_accuracy": 0.0,
+        "slot_retention_accuracy": 0.0,
+        "cross_turn_reference_accuracy": 0,
+        "session_isolation_accuracy": 1.0,
+        "unsupported_refusal_rate": 1.0,
+        "hallucination_rate": 0.0,
+        "task_completion_rate": 0.0,
+        "subtask_completion_rate": 0.0
+      },
+      "session_history": [
+        {
+          "turn": 1,
+          "task": "宁德时代 2024 年的研发投入情况",
+          "response": {
+            "error": "Request error: HTTPConnectionPool(host='localhost', port=8080): Max retries exceeded with url: /agent/execute (Caused by NewConnectionError(\"HTTPConnection(host='localhost', port=8080): Failed to establish a new connection: [Errno 61] Connection refused\"))"
+          },
+          "slots": {}
+        },
+        {
+          "turn": 2,
+          "task": "研发人员有多少？",
+          "response": {
+            "error": "Request error: HTTPConnectionPool(host='localhost', port=8080): Max retries exceeded with url: /agent/execute (Caused by NewConnectionError(\"HTTPConnection(host='localhost', port=8080): Failed to establish a new connection: [Errno 61] Connection refused\"))"
+          },
+          "slots": {}
+        },
+        {
+          "turn": 3,
+          "task": "和 2023 年相比有什么变化",
+          "response": {
+            "error": "Request error: HTTPConnectionPool(host='localhost', port=8080): Max retries exceeded with url: /agent/execute (Caused by NewConnectionError(\"HTTPConnection(host='localhost', port=8080): Failed to establish a new connection: [Errno 61] Connection refused\"))"
+          },
+          "slots": {}
+        }
+      ]
+    },
+    {
+      "case_id": 9,
+      "session_id": "agent-test-9",
+      "final_answer": "",
+      "is_success": false,
+      "metrics": {
+        "tool_selection_accuracy": 0.0,
+        "tool_call_count": 0,
+        "redundant_tool_call_rate": 0,
+        "stock_code_arg_accuracy": 0.0,
+        "time_range_arg_accuracy": 0.0,
+        "doc_type_arg_accuracy": 0.0,
+        "compare_arg_accuracy": 0.0,
+        "slot_retention_accuracy": 0.0,
+        "cross_turn_reference_accuracy": 0,
+        "session_isolation_accuracy": 1.0,
+        "unsupported_refusal_rate": 1.0,
+        "hallucination_rate": 0.0,
+        "task_completion_rate": 0.0,
+        "subtask_completion_rate": 0.0
+      },
+      "session_history": [
+        {
+          "turn": 1,
+          "task": "比亚迪 2024 年的海外收入占比",
+          "response": {
+            "error": "Request error: HTTPConnectionPool(host='localhost', port=8080): Max retries exceeded with url: /agent/execute (Caused by NewConnectionError(\"HTTPConnection(host='localhost', port=8080): Failed to establish a new connection: [Errno 61] Connection refused\"))"
+          },
+          "slots": {}
+        },
+        {
+          "turn": 2,
+          "task": "国内收入呢？",
+          "response": {
+            "error": "Request error: HTTPConnectionPool(host='localhost', port=8080): Max retries exceeded with url: /agent/execute (Caused by NewConnectionError(\"HTTPConnection(host='localhost', port=8080): Failed to establish a new connection: [Errno 61] Connection refused\"))"
+          },
+          "slots": {}
+        },
+        {
+          "turn": 3,
+          "task": "和 2023 年比一下",
+          "response": {
+            "error": "Request error: HTTPConnectionPool(host='localhost', port=8080): Max retries exceeded with url: /agent/execute (Caused by NewConnectionError(\"HTTPConnection(host='localhost', port=8080): Failed to establish a new connection: [Errno 61] Connection refused\"))"
+          },
+          "slots": {}
+        }
+      ]
+    },
+    {
+      "case_id": 10,
+      "session_id": "agent-test-10",
+      "final_answer": "",
+      "is_success": false,
+      "metrics": {
+        "tool_selection_accuracy": 0.0,
+        "tool_call_count": 0,
+        "redundant_tool_call_rate": 0,
+        "stock_code_arg_accuracy": 0.0,
+        "time_range_arg_accuracy": 0.0,
+        "doc_type_arg_accuracy": 0.0,
+        "compare_arg_accuracy": 1.0,
+        "slot_retention_accuracy": 0.0,
+        "cross_turn_reference_accuracy": 0,
+        "session_isolation_accuracy": 1.0,
+        "unsupported_refusal_rate": 1.0,
+        "hallucination_rate": 0.0,
+        "task_completion_rate": 0.0,
+        "subtask_completion_rate": 0.0
+      },
+      "session_history": [
+        {
+          "turn": 1,
+          "task": "贵州茅台的市场竞争优势",
+          "response": {
+            "error": "Request error: HTTPConnectionPool(host='localhost', port=8080): Max retries exceeded with url: /agent/execute (Caused by NewConnectionError(\"HTTPConnection(host='localhost', port=8080): Failed to establish a new connection: [Errno 61] Connection refused\"))"
+          },
+          "slots": {}
+        },
+        {
+          "turn": 2,
+          "task": "具体体现在哪些方面？",
+          "response": {
+            "error": "Request error: HTTPConnectionPool(host='localhost', port=8080): Max retries exceeded with url: /agent/execute (Caused by NewConnectionError(\"HTTPConnection(host='localhost', port=8080): Failed to establish a new connection: [Errno 61] Connection refused\"))"
+          },
+          "slots": {}
+        },
+        {
+          "turn": 3,
+          "task": "这些信息出自哪一章节",
+          "response": {
+            "error": "Request error: HTTPConnectionPool(host='localhost', port=8080): Max retries exceeded with url: /agent/execute (Caused by NewConnectionError(\"HTTPConnection(host='localhost', port=8080): Failed to establish a new connection: [Errno 61] Connection refused\"))"
+          },
+          "slots": {}
+        }
+      ]
+    },
+    {
+      "case_id": 11,
+      "session_id": "agent-test-11",
+      "final_answer": "",
+      "is_success": false,
+      "metrics": {
+        "tool_selection_accuracy": 0.0,
+        "tool_call_count": 0,
+        "redundant_tool_call_rate": 0,
+        "stock_code_arg_accuracy": 0.0,
+        "time_range_arg_accuracy": 0.0,
+        "doc_type_arg_accuracy": 0.0,
+        "compare_arg_accuracy": 0.0,
+        "slot_retention_accuracy": 0.0,
+        "cross_turn_reference_accuracy": 0,
+        "session_isolation_accuracy": 1.0,
+        "unsupported_refusal_rate": 1.0,
+        "hallucination_rate": 0.0,
+        "task_completion_rate": 0.0,
+        "subtask_completion_rate": 0.0
+      },
+      "session_history": [
+        {
+          "turn": 1,
+          "task": "先总结宁德时代 2024 年研发投入，再和 2023 年对比，并说明出自哪一章节",
+          "response": {
+            "error": "Request error: HTTPConnectionPool(host='localhost', port=8080): Max retries exceeded with url: /agent/execute (Caused by NewConnectionError(\"HTTPConnection(host='localhost', port=8080): Failed to establish a new connection: [Errno 61] Connection refused\"))"
+          },
+          "slots": {}
+        }
+      ]
+    },
+    {
+      "case_id": 12,
+      "session_id": "agent-test-12",
+      "final_answer": "",
+      "is_success": false,
+      "metrics": {
+        "tool_selection_accuracy": 0.0,
+        "tool_call_count": 0,
+        "redundant_tool_call_rate": 0,
+        "stock_code_arg_accuracy": 0.0,
+        "time_range_arg_accuracy": 0.0,
+        "doc_type_arg_accuracy": 0.0,
+        "compare_arg_accuracy": 1.0,
+        "slot_retention_accuracy": 0.0,
+        "cross_turn_reference_accuracy": 0,
+        "session_isolation_accuracy": 1.0,
+        "unsupported_refusal_rate": 1.0,
+        "hallucination_rate": 0.0,
+        "task_completion_rate": 0.0,
+        "subtask_completion_rate": 0.0
+      },
+      "session_history": [
+        {
+          "turn": 1,
+          "task": "总结比亚迪 2024 年的核心竞争力，然后和宁德时代对比，并说明信息来源",
+          "response": {
+            "error": "Request error: HTTPConnectionPool(host='localhost', port=8080): Max retries exceeded with url: /agent/execute (Caused by NewConnectionError(\"HTTPConnection(host='localhost', port=8080): Failed to establish a new connection: [Errno 61] Connection refused\"))"
+          },
+          "slots": {}
+        }
+      ]
+    },
+    {
+      "case_id": 13,
+      "session_id": "agent-test-13",
+      "final_answer": "",
+      "is_success": false,
+      "metrics": {
+        "tool_selection_accuracy": 0.0,
+        "tool_call_count": 0,
+        "redundant_tool_call_rate": 0,
+        "stock_code_arg_accuracy": 0.0,
+        "time_range_arg_accuracy": 0.0,
+        "doc_type_arg_accuracy": 0.0,
+        "compare_arg_accuracy": 1.0,
+        "slot_retention_accuracy": 0.0,
+        "cross_turn_reference_accuracy": 0,
+        "session_isolation_accuracy": 1.0,
+        "unsupported_refusal_rate": 1.0,
+        "hallucination_rate": 0.0,
+        "task_completion_rate": 0.0,
+        "subtask_completion_rate": 0.0
+      },
+      "session_history": [
+        {
+          "turn": 1,
+          "task": "分析贵州茅台 2024 年的财务状况，包括营收、净利润、毛利率，并说明出自哪些章节",
+          "response": {
+            "error": "Request error: HTTPConnectionPool(host='localhost', port=8080): Max retries exceeded with url: /agent/execute (Caused by NewConnectionError(\"HTTPConnection(host='localhost', port=8080): Failed to establish a new connection: [Errno 61] Connection refused\"))"
+          },
+          "slots": {}
+        }
+      ]
+    },
+    {
+      "case_id": 14,
+      "session_id": "agent-test-14",
+      "final_answer": "",
+      "is_success": false,
+      "metrics": {
+        "tool_selection_accuracy": 1.0,
+        "tool_call_count": 0,
+        "redundant_tool_call_rate": 0.0,
+        "stock_code_arg_accuracy": 0.0,
+        "time_range_arg_accuracy": 1.0,
+        "doc_type_arg_accuracy": 1.0,
+        "compare_arg_accuracy": 1.0,
+        "slot_retention_accuracy": 0.0,
+        "cross_turn_reference_accuracy": 0,
+        "session_isolation_accuracy": 1.0,
+        "unsupported_refusal_rate": 0.0,
+        "hallucination_rate": 0.0,
+        "task_completion_rate": 0.0,
+        "subtask_completion_rate": 0.0
+      },
+      "session_history": [
+        {
+          "turn": 1,
+          "task": "贵州茅台 2026 年的营收预测是多少",
+          "response": {
+            "error": "Request error: HTTPConnectionPool(host='localhost', port=8080): Max retries exceeded with url: /agent/execute (Caused by NewConnectionError(\"HTTPConnection(host='localhost', port=8080): Failed to establish a new connection: [Errno 61] Connection refused\"))"
+          },
+          "slots": {}
+        }
+      ]
+    },
+    {
+      "case_id": 15,
+      "session_id": "agent-test-15",
+      "final_answer": "",
+      "is_success": false,
+      "metrics": {
+        "tool_selection_accuracy": 1.0,
+        "tool_call_count": 0,
+        "redundant_tool_call_rate": 0.0,
+        "stock_code_arg_accuracy": 0.0,
+        "time_range_arg_accuracy": 1.0,
+        "doc_type_arg_accuracy": 1.0,
+        "compare_arg_accuracy": 1.0,
+        "slot_retention_accuracy": 0.0,
+        "cross_turn_reference_accuracy": 0,
+        "session_isolation_accuracy": 1.0,
+        "unsupported_refusal_rate": 0.0,
+        "hallucination_rate": 0.0,
+        "task_completion_rate": 0.0,
+        "subtask_completion_rate": 0.0
+      },
+      "session_history": [
+        {
+          "turn": 1,
+          "task": "宁德时代的股票明天会涨吗",
+          "response": {
+            "error": "Request error: HTTPConnectionPool(host='localhost', port=8080): Max retries exceeded with url: /agent/execute (Caused by NewConnectionError(\"HTTPConnection(host='localhost', port=8080): Failed to establish a new connection: [Errno 61] Connection refused\"))"
+          },
+          "slots": {}
+        }
+      ]
+    },
+    {
+      "case_id": 16,
+      "session_id": "agent-test-16",
+      "final_answer": "",
+      "is_success": false,
+      "metrics": {
+        "tool_selection_accuracy": 1.0,
+        "tool_call_count": 0,
+        "redundant_tool_call_rate": 0.0,
+        "stock_code_arg_accuracy": 0.0,
+        "time_range_arg_accuracy": 1.0,
+        "doc_type_arg_accuracy": 1.0,
+        "compare_arg_accuracy": 1.0,
+        "slot_retention_accuracy": 0.0,
+        "cross_turn_reference_accuracy": 0,
+        "session_isolation_accuracy": 1.0,
+        "unsupported_refusal_rate": 0.0,
+        "hallucination_rate": 0.0,
+        "task_completion_rate": 0.0,
+        "subtask_completion_rate": 0.0
+      },
+      "session_history": [
+        {
+          "turn": 1,
+          "task": "比亚迪的 CEO 是谁",
+          "response": {
+            "error": "Request error: HTTPConnectionPool(host='localhost', port=8080): Max retries exceeded with url: /agent/execute (Caused by NewConnectionError(\"HTTPConnection(host='localhost', port=8080): Failed to establish a new connection: [Errno 61] Connection refused\"))"
+          },
+          "slots": {}
+        }
+      ]
+    },
+    {
+      "case_id": 17,
+      "session_id": "agent-test-17",
+      "final_answer": "",
+      "is_success": false,
+      "metrics": {
+        "tool_selection_accuracy": 1.0,
+        "tool_call_count": 0,
+        "redundant_tool_call_rate": 0.0,
+        "stock_code_arg_accuracy": 1.0,
+        "time_range_arg_accuracy": 1.0,
+        "doc_type_arg_accuracy": 1.0,
+        "compare_arg_accuracy": 1.0,
+        "slot_retention_accuracy": 1.0,
+        "cross_turn_reference_accuracy": 1.0,
+        "session_isolation_accuracy": 1.0,
+        "unsupported_refusal_rate": 0.0,
+        "hallucination_rate": 0.0,
+        "task_completion_rate": 0.0,
+        "subtask_completion_rate": 0.0
+      },
+      "session_history": [
+        {
+          "turn": 1,
+          "task": "帮我分析一下 2020 年的财务数据",
+          "response": {
+            "error": "Request error: HTTPConnectionPool(host='localhost', port=8080): Max retries exceeded with url: /agent/execute (Caused by NewConnectionError(\"HTTPConnection(host='localhost', port=8080): Failed to establish a new connection: [Errno 61] Connection refused\"))"
+          },
+          "slots": {}
+        }
+      ]
+    }
+  ]
+}
