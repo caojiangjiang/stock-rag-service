@@ -5,18 +5,24 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
+	"stock_rag/internal/pkg/retry"
 	"stock_rag/internal/pkgctx"
 )
+
+const arkEmbedHTTPTimeout = 30 * time.Second
 
 // ArkEmbedder 是基于 Ark 模型的嵌入器实现
 type ArkEmbedder struct {
 	apiKey  string
 	model   string
 	baseURL string
+	client  *http.Client
 }
 
 // ArkEmbedderConfig 描述 Ark 嵌入器的配置
@@ -64,6 +70,9 @@ func NewArkEmbedder(ctx context.Context, cfg ArkEmbedderConfig) (*ArkEmbedder, e
 		apiKey:  apiKey,
 		model:   model,
 		baseURL: baseURL,
+		client: &http.Client{
+			Timeout: arkEmbedHTTPTimeout,
+		},
 	}, nil
 }
 
@@ -91,7 +100,22 @@ func (e *ArkEmbedder) EmbedQuery(ctx context.Context, text string) ([]float32, e
 		return nil, fmt.Errorf("ark embedder not initialized")
 	}
 
-	// 构建请求
+	var vector []float32
+	err := retry.Do(ctx, retry.DefaultConfig, func() error {
+		v, callErr := e.embedQueryOnce(ctx, text)
+		if callErr != nil {
+			return callErr
+		}
+		vector = v
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return vector, nil
+}
+
+func (e *ArkEmbedder) embedQueryOnce(ctx context.Context, text string) ([]float32, error) {
 	url := e.baseURL + "/embeddings/multimodal"
 	payload := map[string]interface{}{
 		"model": e.model,
@@ -103,73 +127,87 @@ func (e *ArkEmbedder) EmbedQuery(ctx context.Context, text string) ([]float32, e
 		},
 	}
 
-	// 发送请求
-	client := &http.Client{}
 	data, err := json.Marshal(payload)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal payload: %w", err)
+		return nil, &retry.PermanentError{Err: fmt.Errorf("failed to marshal payload: %w", err)}
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(data))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(data))
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
+		return nil, &retry.PermanentError{Err: fmt.Errorf("failed to create request: %w", err)}
 	}
 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+e.apiKey)
 
-	resp, err := client.Do(req)
+	resp, err := e.client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
+		return nil, &retry.TemporaryError{Err: fmt.Errorf("failed to send request: %w", err)}
 	}
 	defer resp.Body.Close()
 
-	// 解析响应
-	var response map[string]interface{}
-
-	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, &retry.TemporaryError{Err: fmt.Errorf("failed to read response: %w", err)}
 	}
 
-	// 检查错误
+	if resp.StatusCode >= 500 || resp.StatusCode == http.StatusTooManyRequests {
+		return nil, &retry.TemporaryError{Err: fmt.Errorf("ark api status %d: %s", resp.StatusCode, string(body))}
+	}
+	if resp.StatusCode >= 400 {
+		return nil, &retry.PermanentError{Err: fmt.Errorf("ark api status %d: %s", resp.StatusCode, string(body))}
+	}
+
+	var response map[string]interface{}
+	if err := json.Unmarshal(body, &response); err != nil {
+		return nil, &retry.PermanentError{Err: fmt.Errorf("failed to decode response: %w", err)}
+	}
+
 	if errData, ok := response["error"].(map[string]interface{}); ok {
 		if message, ok := errData["message"].(string); ok {
-			return nil, fmt.Errorf("ark api error: %s", message)
+			return nil, &retry.PermanentError{Err: fmt.Errorf("ark api error: %s", message)}
 		}
-		return nil, fmt.Errorf("ark api error: unknown error")
+		return nil, &retry.PermanentError{Err: fmt.Errorf("ark api error: unknown error")}
 	}
 
-	// 尝试不同的数据结构
-	if data, ok := response["data"]; ok {
-		// 情况1: data 是数组
-		if dataArray, ok := data.([]interface{}); ok {
-			for _, item := range dataArray {
-				if itemMap, ok := item.(map[string]interface{}); ok {
-					if embedding, ok := itemMap["embedding"].([]interface{}); ok {
-						vector := make([]float32, len(embedding))
-						for i, val := range embedding {
-							if floatVal, ok := val.(float64); ok {
-								vector[i] = float32(floatVal)
-							}
-						}
-						return vector, nil
-					}
+	vector, ok := parseEmbeddingVector(response)
+	if !ok {
+		return nil, &retry.PermanentError{Err: fmt.Errorf("no embedding data returned or invalid format")}
+	}
+	return vector, nil
+}
+
+func parseEmbeddingVector(response map[string]interface{}) ([]float32, bool) {
+	data, ok := response["data"]
+	if !ok {
+		return nil, false
+	}
+
+	if dataArray, ok := data.([]interface{}); ok {
+		for _, item := range dataArray {
+			if itemMap, ok := item.(map[string]interface{}); ok {
+				if vector, ok := itemMap["embedding"].([]interface{}); ok {
+					return toFloat32Vector(vector), true
 				}
-			}
-		}
-		// 情况2: data 是对象
-		if dataMap, ok := data.(map[string]interface{}); ok {
-			if embedding, ok := dataMap["embedding"].([]interface{}); ok {
-				vector := make([]float32, len(embedding))
-				for i, val := range embedding {
-					if floatVal, ok := val.(float64); ok {
-						vector[i] = float32(floatVal)
-					}
-				}
-				return vector, nil
 			}
 		}
 	}
 
-	return nil, fmt.Errorf("no embedding data returned or invalid format")
+	if dataMap, ok := data.(map[string]interface{}); ok {
+		if embedding, ok := dataMap["embedding"].([]interface{}); ok {
+			return toFloat32Vector(embedding), true
+		}
+	}
+
+	return nil, false
+}
+
+func toFloat32Vector(values []interface{}) []float32 {
+	vector := make([]float32, len(values))
+	for i, val := range values {
+		if floatVal, ok := val.(float64); ok {
+			vector[i] = float32(floatVal)
+		}
+	}
+	return vector
 }

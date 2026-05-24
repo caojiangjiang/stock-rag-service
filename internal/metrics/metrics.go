@@ -1,8 +1,15 @@
 package metrics
 
 import (
+	"sync/atomic"
+
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+)
+
+var (
+	cacheHitsAtomic   atomic.Uint64
+	cacheMissesAtomic atomic.Uint64
 )
 
 var (
@@ -170,11 +177,26 @@ var (
 // RecordCacheHit 记录缓存命中
 func RecordCacheHit(cacheType string) {
 	CacheHitsTotal.WithLabelValues(cacheType).Inc()
+	cacheHitsAtomic.Add(1)
+	updateCacheHitRatio()
 }
 
 // RecordCacheMiss 记录缓存未命中
 func RecordCacheMiss(cacheType string) {
 	CacheMissesTotal.WithLabelValues(cacheType).Inc()
+	cacheMissesAtomic.Add(1)
+	updateCacheHitRatio()
+}
+
+func updateCacheHitRatio() {
+	hits := cacheHitsAtomic.Load()
+	misses := cacheMissesAtomic.Load()
+	total := hits + misses
+	if total == 0 {
+		CacheHitRatio.Set(0)
+		return
+	}
+	CacheHitRatio.Set(float64(hits) / float64(total))
 }
 
 // RecordHTTPDuration 记录 HTTP 请求延迟
@@ -189,7 +211,8 @@ func RecordChatRequest(status string, seconds float64) {
 }
 
 // RecordRAGRetrieval 记录 RAG 检索
-func RecordRAGRetrieval(stage string, seconds float64, resultCount int) {
+func RecordRAGRetrieval(status, stage string, seconds float64, resultCount int) {
+	RAGRetrievalTotal.WithLabelValues(status).Inc()
 	RAGRetrievalDuration.WithLabelValues(stage).Observe(seconds)
 	RAGRetrievalResults.Observe(float64(resultCount))
 }

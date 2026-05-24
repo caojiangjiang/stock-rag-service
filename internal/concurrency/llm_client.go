@@ -13,6 +13,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	einomodel "stock_rag/internal/eino/model"
+	"stock_rag/internal/metrics"
 	appmodel "stock_rag/internal/model"
 )
 
@@ -95,10 +96,13 @@ func (c *LLMClient) handleNonStreamRequest(req *Request) (string, error) {
 		attribute.Int("response_length", len(response)),
 	)
 
+	tokenIn := estimateTokenCount(req.Question)
+	tokenOut := estimateTokenCount(response)
 	if err != nil {
 		log.Printf("[RAG流程] 大模型调用失败: %v", err)
 		span.SetStatus(codes.Error, err.Error())
 		span.SetAttributes(attribute.String("error", err.Error()))
+		metrics.RecordLLMRequest("error", latency.Seconds(), int64(tokenIn), int64(tokenOut))
 		return "", err
 	}
 
@@ -107,10 +111,7 @@ func (c *LLMClient) handleNonStreamRequest(req *Request) (string, error) {
 	
 	// 记录成功状态
 	span.SetStatus(codes.Ok, "LLM call successful")
-	
-	// 模拟 token 计数（实际应从 API 响应中获取）
-	tokenIn := estimateTokenCount(req.Question)
-	tokenOut := estimateTokenCount(response)
+	metrics.RecordLLMRequest("success", latency.Seconds(), int64(tokenIn), int64(tokenOut))
 	
 	// 设置可观测性属性
 	span.SetAttributes(
@@ -161,10 +162,13 @@ func (c *LLMClient) handleStreamRequest(req *Request) (string, error) {
 		attribute.Int("response_length", len(response)),
 	)
 
+	tokenIn := estimateTokenCount(req.Question)
+	tokenOut := estimateTokenCount(response)
 	if err != nil {
 		log.Printf("[RAG流程] 大模型流式调用失败: %v", err)
 		span.SetStatus(codes.Error, err.Error())
 		span.SetAttributes(attribute.String("error", err.Error()))
+		metrics.RecordLLMRequest("error", latency.Seconds(), int64(tokenIn), int64(tokenOut))
 		return "", err
 	}
 
@@ -173,10 +177,7 @@ func (c *LLMClient) handleStreamRequest(req *Request) (string, error) {
 	
 	// 记录成功状态
 	span.SetStatus(codes.Ok, "LLM stream call successful")
-	
-	// 模拟 token 计数
-	tokenIn := estimateTokenCount(req.Question)
-	tokenOut := estimateTokenCount(response)
+	metrics.RecordLLMRequest("success", latency.Seconds(), int64(tokenIn), int64(tokenOut))
 	
 	// 设置可观测性属性
 	span.SetAttributes(

@@ -6,7 +6,9 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"stock_rag/internal/agent"
@@ -59,7 +61,7 @@ func main() {
 	defer llm.Close()
 
 	// 初始化 Redis 客户端（共享给语义缓存、精确缓存、限流和健康检查）
-	redisClient := initRedisClient()
+	redisClient := initRedisClient(config.Database.Redis)
 
 	querySvc := initQueryService(ctx, store, embedder, redisClient)
 	conversationStore, pgConversationStore := initConversationStore(config.Database.Postgres)
@@ -368,14 +370,26 @@ func initChatService(querySvc *service.QueryService, conversationStore repositor
 	return agent.NewChatService(routeEngine, agentExecutor, conversationStore, exactCache, workingMemory, sessionContext, userMemory)
 }
 
-// initRedisClient 初始化 Redis 客户端
-func initRedisClient() *redis.Client {
+// initRedisClient 初始化 Redis 客户端（环境变量优先，其次 config.yaml）
+func initRedisClient(redisCfg pkgctx.RedisConfig) *redis.Client {
 	redisHost := strings.TrimSpace(os.Getenv("REDIS_HOST"))
+	if redisHost == "" {
+		redisHost = strings.TrimSpace(redisCfg.Host)
+	}
 	redisPort := strings.TrimSpace(os.Getenv("REDIS_PORT"))
+	if redisPort == "" {
+		redisPort = strings.TrimSpace(redisCfg.Port)
+	}
+	if redisPort == "" {
+		redisPort = "6379"
+	}
 	redisPassword := strings.TrimSpace(os.Getenv("REDIS_PASSWORD"))
+	if redisPassword == "" {
+		redisPassword = redisCfg.Password
+	}
 
 	if redisHost == "" {
-		log.Println("Warning: REDIS_HOST not set, Redis client not initialized")
+		log.Println("Warning: Redis host not configured, Redis client not initialized")
 		return nil
 	}
 
@@ -405,8 +419,31 @@ func initRedisClient() *redis.Client {
 
 func serveHTTP(port string, handler http.Handler) {
 	addr := ":" + port
-	log.Printf("stock_rag listening on %s", addr)
-	if err := http.ListenAndServe(addr, handler); err != nil {
-		log.Fatal(err)
+	server := &http.Server{
+		Addr:              addr,
+		Handler:           handler,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      130 * time.Second,
+		IdleTimeout:       60 * time.Second,
 	}
+
+	go func() {
+		log.Printf("stock_rag listening on %s", addr)
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatal(err)
+		}
+	}()
+
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+
+	log.Println("shutting down server...")
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		log.Printf("server shutdown error: %v", err)
+	}
+	log.Println("server stopped")
 }

@@ -2,9 +2,13 @@ package router
 
 import (
 	"context"
-	"stock_rag/internal/repository"
 	"strings"
 	"time"
+
+	"go.opentelemetry.io/otel/attribute"
+
+	"stock_rag/internal/observability"
+	"stock_rag/internal/repository"
 
 	"github.com/google/uuid"
 )
@@ -125,7 +129,18 @@ func NewRouteEngine(config RouteConfig, llmClassifier LLMClassifier, ruleMatcher
 	}
 }
 
-func (e *RouteEngine) Route(ctx context.Context, input *RouteInput) (*RouteDecision, error) {
+func (e *RouteEngine) Route(ctx context.Context, input *RouteInput) (result *RouteDecision, err error) {
+	ctx, span := observability.StartSpan(ctx, "RouteEngine.Route")
+	defer func() {
+		if result != nil {
+			span.SetAttributes(
+				attribute.String("route.selected_mode", string(result.SelectedMode)),
+				attribute.String("route.classifier", result.ClassifierType),
+				attribute.Float64("route.confidence", result.Confidence),
+			)
+		}
+		span.End()
+	}()
 	startTime := time.Now()
 
 	var decision RouteDecision

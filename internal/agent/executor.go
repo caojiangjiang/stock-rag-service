@@ -3,8 +3,10 @@ package agent
 import (
 	"context"
 	"errors"
-	"log"
 
+	"go.opentelemetry.io/otel/attribute"
+
+	"stock_rag/internal/observability"
 	"stock_rag/internal/router"
 )
 
@@ -75,40 +77,50 @@ func NewAgentExecutor(
 }
 
 func (e *AgentExecutor) Execute(ctx context.Context, req *ExecuteRequest) (*ExecuteResponse, error) {
-	log.Printf("[AgentExecutor] Executing request - Mode: %s, ConversationID: %s, UserID: %s",
-		req.Mode, req.ConversationID, req.UserID)
+	ctx, span := observability.StartSpan(ctx, "AgentExecutor.Execute")
+	span.SetAttributes(
+		attribute.String("agent.mode", string(req.Mode)),
+		attribute.String("agent.conversation_id", req.ConversationID),
+	)
+	defer span.End()
+
+	observability.L().InfoCtx(ctx, "AgentExecutor executing request",
+		"mode", req.Mode,
+		"conversation_id", req.ConversationID,
+		"user_id", req.UserID,
+	)
 
 	var executor Executor
 	switch req.Mode {
 	case router.ModeChat:
 		executor = e.chatExecutor
-		log.Printf("[AgentExecutor] Selected chat executor")
+		observability.L().InfoCtx(ctx, "AgentExecutor selected chat executor")
 	case router.ModeRAG:
 		executor = e.ragExecutor
-		log.Printf("[AgentExecutor] Selected RAG executor")
+		observability.L().InfoCtx(ctx, "AgentExecutor selected RAG executor")
 	case router.ModeAnalysis:
 		executor = e.analysisExecutor
-		log.Printf("[AgentExecutor] Selected analysis executor")
+		observability.L().InfoCtx(ctx, "AgentExecutor selected analysis executor")
 	case router.ModeAgent:
-		executor = e.modeAgentExecutor // ModeAgentExecutor - ModeAgent 的唯一入口
-		log.Printf("[AgentExecutor] Selected mode_agent executor (ModeAgent)")
+		executor = e.modeAgentExecutor
+		observability.L().InfoCtx(ctx, "AgentExecutor selected mode_agent executor (ModeAgent)")
 	default:
 		executor = e.ragExecutor
-		log.Printf("[AgentExecutor] No mode specified, defaulting to RAG executor")
+		observability.L().InfoCtx(ctx, "AgentExecutor no mode specified, defaulting to RAG executor")
 	}
 
 	if executor == nil {
-		log.Printf("[AgentExecutor] No executor found for mode: %s", req.Mode)
+		observability.L().ErrorCtx(ctx, "AgentExecutor no executor found for mode", nil, "mode", req.Mode)
 		return nil, ErrExecutorNotFound
 	}
 
-	log.Printf("[AgentExecutor] Calling %s executor", executor.Name())
+	observability.L().InfoCtx(ctx, "AgentExecutor calling executor", "executor_name", executor.Name())
 	resp, err := executor.Execute(ctx, req)
 	if err != nil {
-		log.Printf("[AgentExecutor] Executor %s failed: %v", executor.Name(), err)
+		observability.L().ErrorCtx(ctx, "AgentExecutor executor failed", err, "executor_name", executor.Name())
 		return nil, err
 	}
 
-	log.Printf("[AgentExecutor] Executor %s completed successfully", executor.Name())
+	observability.L().InfoCtx(ctx, "AgentExecutor executor completed successfully", "executor_name", executor.Name())
 	return resp, nil
 }

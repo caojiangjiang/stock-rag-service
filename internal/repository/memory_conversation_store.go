@@ -241,6 +241,52 @@ func (m *MemoryConversationStore) UpdateContext(ctx context.Context, conversatio
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
+	ctxVal, ok := m.contexts[conversationID]
+	if !ok {
+		ctxVal = pkgctx.NewTaskContext()
+		ctxVal.ConversationID = conversationID
+	}
+
+	for k, v := range updates {
+		switch k {
+		case "stock_code":
+			ctxVal.StockCode, _ = v.(string)
+		case "company_name":
+			ctxVal.CompanyName, _ = v.(string)
+		case "time_range":
+			ctxVal.TimeRange, _ = v.(string)
+		case "last_user_intent":
+			ctxVal.LastUserIntent, _ = v.(string)
+		case "output_format":
+			ctxVal.OutputFormat, _ = v.(string)
+		case "is_comparison":
+			ctxVal.IsComparison, _ = v.(bool)
+		case "confirmed_fact":
+			if s, ok := v.(string); ok && s != "" {
+				ctxVal.ConversationSummary = ensureSummary(ctxVal.ConversationSummary)
+				ctxVal.ConversationSummary.ConfirmedFacts = appendUnique(ctxVal.ConversationSummary.ConfirmedFacts, s)
+			}
+		case "pending_question":
+			if s, ok := v.(string); ok && s != "" {
+				ctxVal.ConversationSummary = ensureSummary(ctxVal.ConversationSummary)
+				ctxVal.ConversationSummary.PendingQuestions = appendUnique(ctxVal.ConversationSummary.PendingQuestions, s)
+			}
+		case "current_object":
+			if s, ok := v.(string); ok {
+				ctxVal.ConversationSummary = ensureSummary(ctxVal.ConversationSummary)
+				ctxVal.ConversationSummary.CurrentObject = s
+			}
+		default:
+			if ctxVal.CustomFilters == nil {
+				ctxVal.CustomFilters = make(map[string]string)
+			}
+			ctxVal.CustomFilters[k], _ = v.(string)
+		}
+	}
+
+	ctxVal.UpdatedAt = time.Now()
+	m.contexts[conversationID] = ctxVal
+
 	return nil
 }
 
@@ -275,4 +321,20 @@ func copyMap(src map[string]interface{}) map[string]interface{} {
 		dst[k] = v
 	}
 	return dst
+}
+
+func ensureSummary(summary *pkgctx.ConversationSummary) *pkgctx.ConversationSummary {
+	if summary == nil {
+		return &pkgctx.ConversationSummary{}
+	}
+	return summary
+}
+
+func appendUnique(slice []string, item string) []string {
+	for _, s := range slice {
+		if s == item {
+			return slice
+		}
+	}
+	return append(slice, item)
 }

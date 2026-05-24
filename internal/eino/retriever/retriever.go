@@ -17,6 +17,7 @@ import (
 	"unicode/utf8"
 
 	"stock_rag/internal/embedding"
+	"stock_rag/internal/metrics"
 	appmodel "stock_rag/internal/model"
 	"stock_rag/internal/utils"
 	"stock_rag/internal/vectorstore"
@@ -99,6 +100,9 @@ type HybridRetrieverConfig struct {
 	Embedder                 embedding.Embedder
 	VectorStore              vectorstore.VectorStore
 	LoadLocalSampleDocuments bool
+	Reranker                 *embedding.BGEReranker
+	RerankTopK               int     // 第一阶段检索数量（用于重排）
+	RerankThreshold          float64 // 重排分数阈值
 }
 
 // HybridRetriever 是当前阶段的可演进检索器实现。
@@ -108,10 +112,13 @@ type HybridRetrieverConfig struct {
 // 2. 若未命中，则回退到导入文档 / testdata 的轻量关键词排序；
 // 3. 再未命中，则回退到占位检索结果。
 type HybridRetriever struct {
-	store       DocumentStore
-	embedder    embedding.Embedder
-	vectorStore vectorstore.VectorStore
-	docs        []appmodel.Document
+	store           DocumentStore
+	embedder        embedding.Embedder
+	vectorStore     vectorstore.VectorStore
+	docs            []appmodel.Document
+	reranker        *embedding.BGEReranker
+	rerankTopK      int     // 第一阶段检索数量（用于重排）
+	rerankThreshold float64 // 重排分数阈值
 }
 
 // LocalSampleRetriever 是历史命名的兼容别名。
@@ -201,9 +208,15 @@ const SimilarityThreshold = 0.6
 // NewHybridRetriever 创建可演进的 hybrid retriever。
 func NewHybridRetriever(cfg HybridRetrieverConfig) HybridRetriever {
 	retriever := HybridRetriever{
-		store:       cfg.Store,
-		embedder:    cfg.Embedder,
-		vectorStore: cfg.VectorStore,
+		store:           cfg.Store,
+		embedder:        cfg.Embedder,
+		vectorStore:     cfg.VectorStore,
+		reranker:        cfg.Reranker,
+		rerankTopK:      cfg.RerankTopK,
+		rerankThreshold: cfg.RerankThreshold,
+	}
+	if retriever.rerankTopK == 0 {
+		retriever.rerankTopK = 20 // 默认第一阶段检索20个候选
 	}
 	if !cfg.LoadLocalSampleDocuments {
 		return retriever
@@ -255,7 +268,16 @@ func ExtractYears(text string) []int {
 }
 
 // Retrieve 返回当前阶段的本地样本检索结果。
-func (r HybridRetriever) Retrieve(ctx context.Context, req appmodel.RAGQueryRequest) ([]RetrievedChunk, error) {
+func (r HybridRetriever) Retrieve(ctx context.Context, req appmodel.RAGQueryRequest) (chunks []RetrievedChunk, err error) {
+	start := time.Now()
+	defer func() {
+		status := "success"
+		if err != nil {
+			status = "error"
+		}
+		metrics.RecordRAGRetrieval(status, "hybrid", time.Since(start).Seconds(), len(chunks))
+	}()
+
 	option := DefaultQueryOption()
 	intent := AnalyzeQuery(req)
 	topK := option.TopK
@@ -424,7 +446,7 @@ func (r HybridRetriever) performRetrieval(ctx context.Context, stockCode, timeRa
 	}
 
 	// 合并并重新排序结果
-	mergedChunks := r.mergeAndRankChunks(vectorChunks, bm25Chunks, topK)
+	mergedChunks := r.mergeAndRankChunks(ctx, question, vectorChunks, bm25Chunks, topK)
 	if len(mergedChunks) > 0 {
 		utils.Info("混合检索命中", utils.LogFields{
 			StockCode:      stockCode,
@@ -558,8 +580,8 @@ type mergedChunk struct {
 	source string // "vector" 或 "bm25"
 }
 
-// mergeAndRankChunks 合并并重新排序检索结果
-func (r HybridRetriever) mergeAndRankChunks(vectorChunks, bm25Chunks []RetrievedChunk, topK int) []RetrievedChunk {
+// mergeAndRankChunks 合并并重新排序检索结果（支持 BGE-reranker 二阶段重排）
+func (r HybridRetriever) mergeAndRankChunks(ctx context.Context, question string, vectorChunks, bm25Chunks []RetrievedChunk, topK int) []RetrievedChunk {
 	// 去重并计算综合分数
 	chunkMap := make(map[string]*mergedChunk)
 
@@ -597,18 +619,64 @@ func (r HybridRetriever) mergeAndRankChunks(vectorChunks, bm25Chunks []Retrieved
 		}
 	}
 
-	// 转换为切片并排序
+	// 转换为切片
 	mergedList := make([]*mergedChunk, 0, len(chunkMap))
 	for _, mc := range chunkMap {
 		mergedList = append(mergedList, mc)
 	}
 
-	// 按分数降序排序
+	if len(mergedList) == 0 {
+		return []RetrievedChunk{}
+	}
+
+	// 第一阶段：按混合分数排序，取前rerankTopK个候选
 	sort.SliceStable(mergedList, func(i, j int) bool {
 		return mergedList[i].score > mergedList[j].score
 	})
 
-	// 取前topK个结果
+	// 如果配置了 reranker，进行二阶段重排
+	if r.reranker != nil && len(mergedList) > 0 {
+		// 取前rerankTopK个候选进行重排
+		candidateCount := min(r.rerankTopK, len(mergedList))
+		candidates := mergedList[:candidateCount]
+
+		// 准备重排所需的文本
+		texts := make([]string, 0, candidateCount)
+		for _, mc := range candidates {
+			texts = append(texts, mc.chunk.Content)
+		}
+
+		// 调用 BGE-reranker 进行重排
+		rerankResults, err := r.reranker.RerankWithThreshold(ctx, question, texts, topK*2, r.rerankThreshold)
+		if err != nil {
+			utils.Warning("BGE-reranker 重排失败，回退到混合分数排序", utils.LogFields{
+				Message: err.Error(),
+			})
+		} else if len(rerankResults) > 0 {
+			// 根据重排结果重建顺序
+			rerankedChunks := make([]RetrievedChunk, 0, len(rerankResults))
+			usedIndices := make(map[int]bool)
+
+			for _, result := range rerankResults {
+				if result.Index >= 0 && result.Index < len(candidates) && !usedIndices[result.Index] {
+					usedIndices[result.Index] = true
+					rerankedChunks = append(rerankedChunks, candidates[result.Index].chunk)
+				}
+			}
+
+			utils.Info("BGE-reranker 二阶段重排完成", utils.LogFields{
+				Message: fmt.Sprintf("original_count=%d, reranked_count=%d", len(candidates), len(rerankedChunks)),
+			})
+
+			// 取前topK个结果
+			if len(rerankedChunks) > topK {
+				return rerankedChunks[:topK]
+			}
+			return rerankedChunks
+		}
+	}
+
+	// 第二阶段：如果没有配置reranker或重排失败，按混合分数排序取前topK
 	result := make([]RetrievedChunk, 0, min(topK, len(mergedList)))
 	for i, mc := range mergedList {
 		if i >= topK {

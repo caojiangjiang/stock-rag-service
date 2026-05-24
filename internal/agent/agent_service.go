@@ -9,6 +9,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 
 	"stock_rag/internal/cache"
+	"stock_rag/internal/metrics"
 	"stock_rag/internal/observability"
 	"stock_rag/internal/repository"
 	"stock_rag/internal/router"
@@ -71,9 +72,18 @@ type ChatResponse struct {
 	Error          string        `json:"error,omitempty"`
 }
 
-func (s *ChatService) Chat(ctx context.Context, req *ChatRequest) (*ChatResponse, error) {
+func (s *ChatService) Chat(ctx context.Context, req *ChatRequest) (resp *ChatResponse, err error) {
 	ctx, span := observability.StartSpan(ctx, "ChatService.Chat")
 	defer span.End()
+
+	startTime := time.Now()
+	defer func() {
+		status := "success"
+		if err != nil || (resp != nil && resp.Error != "") {
+			status = "error"
+		}
+		metrics.RecordChatRequest(status, time.Since(startTime).Seconds())
+	}()
 
 	if req == nil {
 		err := fmt.Errorf("chat request is nil")
@@ -84,7 +94,6 @@ func (s *ChatService) Chat(ctx context.Context, req *ChatRequest) (*ChatResponse
 	}
 	span.SetAttributes(attribute.String("chat.conversation_id", req.ConversationID))
 
-	startTime := time.Now()
 	req.Message = strings.TrimSpace(req.Message)
 	convID := strings.TrimSpace(req.ConversationID)
 	if convID == "" {
@@ -162,6 +171,7 @@ func (s *ChatService) Chat(ctx context.Context, req *ChatRequest) (*ChatResponse
 		if err != nil {
 			observability.L().WarnCtx(ctx, "Exact cache query failed", "error", err)
 		} else if cacheResult.Hit {
+			metrics.RecordCacheHit("exact")
 			observability.L().InfoCtx(ctx, "Exact cache hit, returning cached response",
 				"message_id", routeDecision.MessageID,
 				"access_count", cacheResult.AccessCount,
@@ -178,6 +188,7 @@ func (s *ChatService) Chat(ctx context.Context, req *ChatRequest) (*ChatResponse
 				Citations:      nil,
 			}, nil
 		}
+		metrics.RecordCacheMiss("exact")
 		observability.L().InfoCtx(ctx, "Exact cache miss, proceeding with execution")
 	}
 

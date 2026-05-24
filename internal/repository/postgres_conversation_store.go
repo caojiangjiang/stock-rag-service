@@ -23,7 +23,19 @@ func NewPostgresConversationStore(host, port, user, password, database, sslmode 
 	connStr := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
 		host, port, user, password, database, sslmode)
 
-	db, err := pgxpool.Connect(context.Background(), connStr)
+	// 配置连接池参数
+	config, err := pgxpool.ParseConfig(connStr)
+	if err != nil {
+		return nil, err
+	}
+	// 连接池配置
+	config.MaxConns = 25                       // 最大连接数
+	config.MinConns = 5                        // 最小连接数
+	config.MaxConnLifetime = 5 * time.Minute   // 连接最大生命周期
+	config.MaxConnIdleTime = 10 * time.Minute  // 连接最大空闲时间
+	config.HealthCheckPeriod = 1 * time.Minute // 健康检查周期
+
+	db, err := pgxpool.ConnectConfig(context.Background(), config)
 	if err != nil {
 		return nil, err
 	}
@@ -187,13 +199,13 @@ func (p *PostgresConversationStore) SaveMessage(ctx context.Context, message *Me
 	}
 
 	_, err = p.db.Exec(ctx, `
-		INSERT INTO messages (id, conversation_id, role, content, route_mode, metadata, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		INSERT INTO messages (id, conversation_id, user_id, role, content, route_mode, metadata, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		ON CONFLICT (id) DO UPDATE SET
-			content = $4,
-			route_mode = $5,
-			metadata = $6
-	`, message.ID, message.ConversationID, message.Role, message.Content,
+			content = $5,
+			route_mode = $6,
+			metadata = $7
+	`, message.ID, message.ConversationID, message.UserID, message.Role, message.Content,
 		message.RouteMode, metadataJSON, message.CreatedAt)
 
 	if err != nil {
@@ -338,14 +350,67 @@ func (p *PostgresConversationStore) GetContext(ctx context.Context, conversation
 }
 
 func (p *PostgresConversationStore) UpdateContext(ctx context.Context, conversationID string, updates map[string]interface{}) error {
-	_, err := p.db.Exec(ctx, `
-		UPDATE conversation_contexts
-		SET context = jsonb_set(context, $2, $3, true),
-			updated_at = $4
-		WHERE conversation_id = $1
-	`, conversationID, []string{"key"}, updates, time.Now().Unix())
+	row := p.db.QueryRow(ctx, `
+		SELECT context FROM conversation_contexts WHERE conversation_id = $1
+	`, conversationID)
 
-	return err
+	var contextJSON []byte
+	err := row.Scan(&contextJSON)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			// 如果没有上下文，创建一个新的
+			newCtx := pkgctx.NewTaskContext()
+			newCtx.ConversationID = conversationID
+			return p.SaveContext(ctx, conversationID, newCtx)
+		}
+		return err
+	}
+
+	var context pkgctx.TaskContext
+	err = json.Unmarshal(contextJSON, &context)
+	if err != nil {
+		return err
+	}
+
+	for k, v := range updates {
+		switch k {
+		case "stock_code":
+			context.StockCode, _ = v.(string)
+		case "company_name":
+			context.CompanyName, _ = v.(string)
+		case "time_range":
+			context.TimeRange, _ = v.(string)
+		case "last_user_intent":
+			context.LastUserIntent, _ = v.(string)
+		case "output_format":
+			context.OutputFormat, _ = v.(string)
+		case "is_comparison":
+			context.IsComparison, _ = v.(bool)
+		case "confirmed_fact":
+			if s, ok := v.(string); ok && s != "" {
+				context.ConversationSummary = ensureSummary(context.ConversationSummary)
+				context.ConversationSummary.ConfirmedFacts = appendUnique(context.ConversationSummary.ConfirmedFacts, s)
+			}
+		case "pending_question":
+			if s, ok := v.(string); ok && s != "" {
+				context.ConversationSummary = ensureSummary(context.ConversationSummary)
+				context.ConversationSummary.PendingQuestions = appendUnique(context.ConversationSummary.PendingQuestions, s)
+			}
+		case "current_object":
+			if s, ok := v.(string); ok {
+				context.ConversationSummary = ensureSummary(context.ConversationSummary)
+				context.ConversationSummary.CurrentObject = s
+			}
+		default:
+			if context.CustomFilters == nil {
+				context.CustomFilters = make(map[string]string)
+			}
+			context.CustomFilters[k], _ = v.(string)
+		}
+	}
+
+	context.UpdatedAt = time.Now()
+	return p.SaveContext(ctx, conversationID, &context)
 }
 
 func (p *PostgresConversationStore) UpdateLastRouteMode(ctx context.Context, conversationID string, routeMode string) error {

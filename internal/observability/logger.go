@@ -1,10 +1,14 @@
 package observability
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 	"os"
+	"sync"
 	"time"
+
+	"go.opentelemetry.io/otel/trace"
 )
 
 // StructuredLogEntry 结构化日志条目
@@ -29,6 +33,23 @@ type StructuredLogEntry struct {
 type Logger struct {
 	service string
 	logger  *log.Logger
+}
+
+var (
+	defaultLogger *Logger
+	defaultOnce   sync.Once
+)
+
+// L 返回全局默认 logger（service 取自 OTEL_SERVICE_NAME 或 fallback "stock_rag"）
+func L() *Logger {
+	defaultOnce.Do(func() {
+		service := os.Getenv("OTEL_SERVICE_NAME")
+		if service == "" {
+			service = "stock_rag"
+		}
+		defaultLogger = NewLogger(service)
+	})
+	return defaultLogger
 }
 
 // NewLogger 创建结构化日志记录器
@@ -58,6 +79,53 @@ func (l *Logger) Warn(message string, fields ...interface{}) {
 // Debug 记录调试日志
 func (l *Logger) Debug(message string, fields ...interface{}) {
 	l.log("DEBUG", message, fields...)
+}
+
+// InfoCtx / ErrorCtx / WarnCtx / DebugCtx 自动从 ctx 提取 OTel TraceID/SpanID
+func (l *Logger) InfoCtx(ctx context.Context, message string, fields ...interface{}) {
+	l.log("INFO", message, appendTraceFields(ctx, fields)...)
+}
+
+func (l *Logger) ErrorCtx(ctx context.Context, message string, err error, fields ...interface{}) {
+	if err != nil {
+		fields = append(fields, "error", err.Error())
+	}
+	l.log("ERROR", message, appendTraceFields(ctx, fields)...)
+}
+
+func (l *Logger) WarnCtx(ctx context.Context, message string, fields ...interface{}) {
+	l.log("WARN", message, appendTraceFields(ctx, fields)...)
+}
+
+func (l *Logger) DebugCtx(ctx context.Context, message string, fields ...interface{}) {
+	l.log("DEBUG", message, appendTraceFields(ctx, fields)...)
+}
+
+// appendTraceFields 从 ctx 的 OTel SpanContext 提取 trace_id/span_id 注入字段
+func appendTraceFields(ctx context.Context, fields []interface{}) []interface{} {
+	if ctx == nil {
+		return fields
+	}
+	sc := trace.SpanContextFromContext(ctx)
+	if sc.HasTraceID() {
+		fields = append(fields, "trace_id", sc.TraceID().String())
+	}
+	if sc.HasSpanID() {
+		fields = append(fields, "span_id", sc.SpanID().String())
+	}
+	return fields
+}
+
+// TraceIDFromContext 暴露给其他包用：从 ctx 拿 OTel TraceID（无则返回空字符串）
+func TraceIDFromContext(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	sc := trace.SpanContextFromContext(ctx)
+	if sc.HasTraceID() {
+		return sc.TraceID().String()
+	}
+	return ""
 }
 
 // log 通用日志记录方法

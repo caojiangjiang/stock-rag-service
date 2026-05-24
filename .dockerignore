@@ -3,58 +3,50 @@
 .gitignore
 
 # IDE
-.vscode/
 .idea/
+.vscode/
 *.swp
 *.swo
-*~
-.DS_Store
 
-# 文档
+# Build outputs
+bin/
+dist/
+
+# Test files
+*_test.go
+*_tests.go
+.test/
+
+# Documentation
 *.md
-!README.md
 docs/
 
-# 测试
-*_test.go
-test/
-tests/
-*_test
+# CI/CD
+.github/
+.gitlab-ci.yml
+.travis.yml
 
-# 本地配置文件
+# Local environment
 .env
 .env.local
 .env.*.local
-config.local.yaml
-configs/config.local.yaml
 
-# 日志
-logs/
+# Logs
 *.log
+logs/
 
-# 构建产物
-bin/
-dist/
-build/
-
-# 临时文件
+# Temporary files
 tmp/
 temp/
 *.tmp
 
-# 评估脚本
-eval/
+# OS files
+.DS_Store
+Thumbs.db
 
-# 本地数据
-data/
-nianbao/
+# Vendor (we use go mod)
+vendor/
 
-# Docker 相关（避免递归复制）
-docker-compose*.yaml
-Dockerfile*
-.dockerignore
-
-# 特定文件
-go-install/
-*.tar.gz
-*.zip
+# Local development
+local/
+scripts/dev/

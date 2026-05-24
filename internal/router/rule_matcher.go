@@ -69,7 +69,7 @@ func NewHardRuleMatcher() *HardRuleMatcher {
 			{
 				Name:       "chat_keywords",
 				Mode:       ModeChat,
-				Keywords:   []string{"你是谁", "你能做什么", "怎么使用", "介绍", "功能", "帮助", "闲聊", "你好", "谢谢"},
+				Keywords:   []string{"你是谁", "你能做什么", "你能帮我做什么", "我能问你什么", "你可以做什么", "你擅长什么", "怎么使用", "介绍", "功能", "帮助", "闲聊", "你好", "谢谢", "你好吗"},
 				Confidence: 0.95,
 				Reason:     "命中Chat关键词",
 			},

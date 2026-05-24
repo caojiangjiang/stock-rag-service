@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"time"
 
 	"github.com/redis/go-redis/v9"
 
@@ -10,6 +11,7 @@ import (
 	"stock_rag/internal/auth"
 	"stock_rag/internal/llm"
 	"stock_rag/internal/metrics"
+	"stock_rag/internal/pkg/httpmiddleware"
 	"stock_rag/internal/repository"
 	"stock_rag/internal/service"
 )
@@ -40,8 +42,9 @@ func NewRouter(querySvc QueryService, taskAgentService *service.TaskAgentService
 	mux.HandleFunc("/stats", StatsHandler())
 	mux.HandleFunc("/documents/import", DocumentsImportHandler(querySvc))
 	mux.HandleFunc("/documents", DocumentsListHandler(querySvc))
-	mux.HandleFunc("/rag/query", QueryHandler(querySvc))
-	mux.HandleFunc("/rag/query/stream", QueryStreamHandler(querySvc))
+	longRunning := httpmiddleware.Timeout(120 * time.Second)
+	mux.HandleFunc("/rag/query", longRunning(QueryHandler(querySvc)))
+	mux.HandleFunc("/rag/query/stream", longRunning(QueryStreamHandler(querySvc)))
 
 	agentHandler := NewAgentHandler(taskAgentService, jwtSecret)
 	mux.HandleFunc("/api/agent/execute", agentHandler.ExecuteTask)
@@ -51,7 +54,7 @@ func NewRouter(querySvc QueryService, taskAgentService *service.TaskAgentService
 
 	// 统一聊天接口
 	chatHandler := NewChatHandler(chatService)
-	mux.HandleFunc("/api/chat", chatHandler.Chat)
+	mux.HandleFunc("/api/chat", longRunning(chatHandler.Chat))
 
 	// 对话管理接口
 	convHandler := NewConversationHandler(conversationStore)
@@ -139,46 +142,19 @@ func StatsHandler() http.HandlerFunc {
 			return
 		}
 
-		// 初始化系统性能面板
+		summary := metrics.GatherSummary()
 		stats := SystemStats{
-			Query: QueryStats{
-				Total:      1000,
-				Success:    950,
-				Failure:    50,
-				AvgLatency: 1500,
-				P95Latency: 3000,
-			},
-			Stream: StreamStats{
-				Total:         500,
-				Success:       480,
-				Failure:       20,
-				AvgFirstToken: 800,
-				P95FirstToken: 1500,
-			},
-			Agent: AgentStats{
-				Total:    200,
-				AvgSteps: 3.2,
-				StepDistribution: map[int]int64{
-					1: 50,
-					2: 80,
-					3: 40,
-					4: 20,
-					5: 10,
-				},
-				AvgStepLatency: 1200,
-			},
 			Cache: CacheStats{
-				HitRate: 0.75,
-				Total:   1000,
-				Hits:    750,
-				Misses:  250,
+				HitRate: summary.Cache.HitRate,
+				Total:   int64(summary.Cache.Hits + summary.Cache.Misses),
+				Hits:    int64(summary.Cache.Hits),
+				Misses:  int64(summary.Cache.Misses),
 			},
 			Error: ErrorStats{
-				Total:          50,
-				Timeout:        10,
-				LLMError:       20,
-				RetrievalError: 10,
-				AgentError:     10,
+				Total:          int64(summary.Chat.Error + summary.LLM.Error + summary.RAG.Error),
+				LLMError:       int64(summary.LLM.Error),
+				RetrievalError: int64(summary.RAG.Error),
+				AgentError:     int64(summary.Chat.Error),
 			},
 		}
 

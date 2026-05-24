@@ -26,6 +26,8 @@ tests/
 .env.*.local
 config.local.yaml
 configs/config.local.yaml
+config.yaml
+configs/config.yaml
 
 # 日志
 logs/

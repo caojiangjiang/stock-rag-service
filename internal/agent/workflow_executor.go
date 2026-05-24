@@ -2,8 +2,8 @@ package agent
 
 import (
 	"context"
-	"log"
 
+	"stock_rag/internal/observability"
 	"stock_rag/internal/router"
 	"stock_rag/internal/service"
 )
@@ -31,9 +31,11 @@ func (e *ModeAgentExecutor) Mode() router.RouteMode {
 }
 
 func (e *ModeAgentExecutor) Execute(ctx context.Context, req *ExecuteRequest) (*ExecuteResponse, error) {
-	log.Printf("[ModeAgentExecutor] Starting execution for ModeAgent")
+	ctx, span := observability.StartSpan(ctx, "ModeAgentExecutor.Execute")
+	defer span.End()
 
-	// 转发请求到 TaskAgentService，工作流编排由 service 层负责
+	observability.L().InfoCtx(ctx, "ModeAgentExecutor starting execution for ModeAgent")
+
 	taskReq := &service.ComplexTaskRequest{
 		ConversationID: req.ConversationID,
 		MessageID:      req.MessageID,
@@ -44,7 +46,7 @@ func (e *ModeAgentExecutor) Execute(ctx context.Context, req *ExecuteRequest) (*
 
 	resp, err := e.taskAgentService.ExecuteComplexTask(ctx, taskReq)
 	if err != nil {
-		log.Printf("[ModeAgentExecutor] Task execution failed: %v", err)
+		observability.L().ErrorCtx(ctx, "ModeAgentExecutor task execution failed", err)
 		return nil, err
 	}
 

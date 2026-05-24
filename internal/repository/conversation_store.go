@@ -92,6 +92,7 @@ type Conversation struct {
 type Message struct {
 	ID             string                 `json:"id"`
 	ConversationID string                 `json:"conversation_id"`
+	UserID         string                 `json:"user_id"`
 	Role           string                 `json:"role"`
 	Content        string                 `json:"content"`
 	RouteMode      string                 `json:"route_mode,omitempty"`
@@ -114,10 +115,11 @@ func NewConversation(conversationID, userID, title string) *Conversation {
 }
 
 // NewMessage 创建新消息
-func NewMessage(conversationID, role, content string, metadata map[string]interface{}) *Message {
+func NewMessage(conversationID, userID, role, content string, metadata map[string]interface{}) *Message {
 	return &Message{
 		ID:             fmt.Sprintf("msg-%d", time.Now().UnixNano()),
 		ConversationID: conversationID,
+		UserID:         userID,
 		Role:           role,
 		Content:        content,
 		Metadata:       metadata,

@@ -8,8 +8,11 @@ import (
 	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/adk/prebuilt/supervisor"
 	"github.com/cloudwego/eino/schema"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 
 	"stock_rag/internal/eino/adapter"
+	"stock_rag/internal/observability"
 )
 
 type SupervisorCoordinator struct {
@@ -40,6 +43,20 @@ func (c *SupervisorCoordinator) SetAgentBuilder(builder *AgentBuilder) {
 }
 
 func (c *SupervisorCoordinator) Execute(ctx context.Context, taskState *TaskState) (string, error) {
+	ctx, rootSpan := observability.StartSpan(ctx, "SupervisorCoordinator.Execute")
+	rootSpan.SetAttributes(
+		attribute.String("task.conversation_id", taskState.ConversationID),
+		attribute.String("task.message_id", taskState.MessageID),
+		attribute.String("task.stock_code", taskState.StockCode),
+	)
+	defer func() {
+		rootSpan.SetAttributes(
+			attribute.Int("task.step_count", taskState.CurrentStep),
+			attribute.String("task.status", string(taskState.Status)),
+		)
+		rootSpan.End()
+	}()
+
 	supervisorAgent, err := c.createSupervisorAgent(ctx)
 	if err != nil {
 		taskState.UpdateStatus(TaskStatusFailed)
@@ -81,13 +98,20 @@ func (c *SupervisorCoordinator) Execute(ctx context.Context, taskState *TaskStat
 	iterator := sv.Run(ctx, input)
 
 	var finalResult string
+	var currentSpan trace.Span
 	for {
 		event, ok := iterator.Next()
 		if !ok {
+			if currentSpan != nil {
+				currentSpan.End()
+			}
 			break
 		}
 
 		if event.Err != nil {
+			if currentSpan != nil {
+				currentSpan.End()
+			}
 			taskState.UpdateStatus(TaskStatusFailed)
 			taskState.AddError(fmt.Sprintf("Supervisor 执行错误: %v", event.Err))
 			return "", event.Err
@@ -98,17 +122,31 @@ func (c *SupervisorCoordinator) Execute(ctx context.Context, taskState *TaskStat
 			content := msg.Content
 			finalResult += content
 
+			agentName := event.AgentName
+			if agentName == "" {
+				agentName = "unknown_agent"
+			}
+
+			stepStartTime := time.Now()
+
+			ctx, currentSpan = trace.SpanFromContext(ctx).TracerProvider().Tracer("supervisor_coordinator").Start(ctx, fmt.Sprintf("agent.%s", agentName))
+
 			stepTrace := StepTrace{
 				StepID:    fmt.Sprintf("%d", taskState.CurrentStep+1),
-				ToolName:  event.AgentName,
+				ToolName:  agentName,
 				Input:     map[string]interface{}{"query": taskState.UserMessage},
 				Output:    content,
-				StartTime: time.Now(),
+				StartTime: stepStartTime,
 				EndTime:   time.Now(),
 				Status:    TaskStatusCompleted,
 			}
+
+			stepTrace.LatencyMS = stepTrace.EndTime.Sub(stepTrace.StartTime).Milliseconds()
+
 			taskState.AddStepTrace(stepTrace)
 			taskState.CurrentStep++
+
+			currentSpan.End()
 		}
 
 		if event.Action != nil && event.Action.TransferToAgent != nil {
@@ -239,20 +277,30 @@ func (c *SupervisorCoordinator) ExecuteWithCheckpoint(ctx context.Context, taskS
 
 func (c *SupervisorCoordinator) processIteratorWithInterrupt(ctx context.Context, iter *adk.AsyncIterator[*adk.AgentEvent], taskState *TaskState) (string, *InterruptInfo, error) {
 	var finalResult string
+	var currentSpan trace.Span
 
 	for {
 		event, ok := iter.Next()
 		if !ok {
+			if currentSpan != nil {
+				currentSpan.End()
+			}
 			break
 		}
 
 		if event.Err != nil {
+			if currentSpan != nil {
+				currentSpan.End()
+			}
 			taskState.UpdateStatus(TaskStatusFailed)
 			taskState.AddError(fmt.Sprintf("Supervisor 执行错误: %v", event.Err))
 			return "", nil, event.Err
 		}
 
 		if event.Action != nil && event.Action.Interrupted != nil {
+			if currentSpan != nil {
+				currentSpan.End()
+			}
 			taskState.CreateCheckpoint(event.Action.Interrupted.InterruptContexts[0].ID)
 
 			interruptInfo := &InterruptInfo{
@@ -270,17 +318,31 @@ func (c *SupervisorCoordinator) processIteratorWithInterrupt(ctx context.Context
 			content := msg.Content
 			finalResult += content
 
+			agentName := event.AgentName
+			if agentName == "" {
+				agentName = "unknown_agent"
+			}
+
+			stepStartTime := time.Now()
+
+			ctx, currentSpan = trace.SpanFromContext(ctx).TracerProvider().Tracer("supervisor_coordinator").Start(ctx, fmt.Sprintf("agent.%s", agentName))
+
 			stepTrace := StepTrace{
 				StepID:    fmt.Sprintf("%d", taskState.CurrentStep+1),
-				ToolName:  event.AgentName,
+				ToolName:  agentName,
 				Input:     map[string]interface{}{"query": taskState.UserMessage},
 				Output:    content,
-				StartTime: time.Now(),
+				StartTime: stepStartTime,
 				EndTime:   time.Now(),
 				Status:    TaskStatusCompleted,
 			}
+
+			stepTrace.LatencyMS = stepTrace.EndTime.Sub(stepTrace.StartTime).Milliseconds()
+
 			taskState.AddStepTrace(stepTrace)
 			taskState.CurrentStep++
+
+			currentSpan.End()
 		}
 
 		if event.Action != nil && event.Action.TransferToAgent != nil {

@@ -98,7 +98,7 @@ func ReadinessHandler(deps HealthDependencies) http.HandlerFunc {
 		checks := make(map[string]bool)
 		allHealthy := true
 
-		// 检查 PostgreSQL
+		// 检查 PostgreSQL（未配置时视为跳过，便于本地内存模式）
 		if deps.PostgresDB != nil {
 			ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 			defer cancel()
@@ -109,11 +109,10 @@ func ReadinessHandler(deps HealthDependencies) http.HandlerFunc {
 				checks["postgres"] = true
 			}
 		} else {
-			checks["postgres"] = false
-			allHealthy = false
+			checks["postgres"] = true
 		}
 
-		// 检查 Redis
+		// 检查 Redis（未配置时视为可选依赖，不阻断 readiness）
 		if deps.RedisClient != nil {
 			ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 			defer cancel()
@@ -124,8 +123,7 @@ func ReadinessHandler(deps HealthDependencies) http.HandlerFunc {
 				checks["redis"] = true
 			}
 		} else {
-			checks["redis"] = false
-			allHealthy = false
+			checks["redis"] = true
 		}
 
 		// 检查 LLM（通过环境变量判断）

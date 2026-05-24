@@ -113,6 +113,11 @@ func generateTraceID(requestID string) string {
 	return requestID
 }
 
+// GenerateTraceID 生成一个全局唯一的 traceId
+func GenerateTraceID() string {
+	return randomString(32)
+}
+
 func generateSpanID() string {
 	return randomString(16)
 }
