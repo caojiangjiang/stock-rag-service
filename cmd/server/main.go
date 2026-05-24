@@ -12,6 +12,7 @@ import (
 	"stock_rag/internal/agent"
 	"stock_rag/internal/api"
 	"stock_rag/internal/auth"
+	"stock_rag/internal/cache"
 	einoagent "stock_rag/internal/eino/agent"
 	einomodel "stock_rag/internal/eino/model"
 	ragretriever "stock_rag/internal/eino/retriever"
@@ -19,7 +20,9 @@ import (
 	"stock_rag/internal/eino/trace"
 	"stock_rag/internal/embedding"
 	"stock_rag/internal/llm"
+	"stock_rag/internal/metrics"
 	"stock_rag/internal/observability"
+	"stock_rag/internal/pkg/limiter"
 	"stock_rag/internal/pkgctx"
 	"stock_rag/internal/repository"
 	"stock_rag/internal/router"
@@ -28,6 +31,7 @@ import (
 
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/joho/godotenv"
+	"github.com/redis/go-redis/v9"
 )
 
 type unifiedDataStore interface {
@@ -50,18 +54,44 @@ func main() {
 	config, port := loadAppConfig()
 	store := initUnifiedStore(ctx, config.Database.Postgres)
 	embedder := initEmbedder(ctx, config.Embeddingder)
-	byteplusLogger := initTracing()
-	defer byteplusLogger.Close()
+	initTracing()
 	initGlobalLLM(ctx, config)
 	defer llm.Close()
-	querySvc := initQueryService(ctx, store, embedder)
+
+	// 初始化 Redis 客户端（共享给语义缓存、精确缓存、限流和健康检查）
+	redisClient := initRedisClient()
+
+	querySvc := initQueryService(ctx, store, embedder, redisClient)
 	conversationStore, pgConversationStore := initConversationStore(config.Database.Postgres)
 	taskAgentService := initTaskAgentService(conversationStore, querySvc)
 	authService, jwtSecret := initAuthService(pgConversationStore)
-	chatService := initChatService(querySvc, conversationStore, taskAgentService)
 
-	mux := api.NewRouter(querySvc, taskAgentService, authService, jwtSecret, chatService, conversationStore, byteplusLogger)
-	serveHTTP(port, mux)
+	chatService := initChatService(querySvc, conversationStore, pgConversationStore, taskAgentService, store, embedder, redisClient)
+	mux := api.NewRouter(querySvc, taskAgentService, authService, jwtSecret, chatService, conversationStore, pgConversationStore.DB(), redisClient)
+
+	// 添加限流中间件（如果 Redis 可用，使用分布式限流；否则使用内存限流）
+	var rateLimiter limiter.RateLimiter
+	if redisClient != nil {
+		rateLimiter = limiter.NewRedisTokenBucket(redisClient, limiter.TokenBucketConfig{
+			Capacity:   100,           // 桶容量：100 个令牌
+			RefillRate: 10,            // 每秒补充 10 个令牌
+		}, "httpratelimit:")
+		log.Println("Rate limiter initialized (Redis distributed)")
+	} else {
+		rateLimiter = limiter.NewTokenBucket(limiter.TokenBucketConfig{
+			Capacity:   100,
+			RefillRate: 10,
+		})
+		log.Println("Rate limiter initialized (in-memory)")
+	}
+
+	// 限流中间件：按 IP 限流
+	handler := limiter.RateLimitMiddleware(rateLimiter, limiter.DefaultKeyFunc)(mux)
+	// 追踪中间件
+	handler = observability.TracingMiddleware("stock_rag")(handler)
+	// Prometheus 指标中间件（最外层，统计完整请求耗时）
+	handler = metrics.HTTPMetricsMiddleware(handler)
+	serveHTTP(port, handler)
 }
 
 func loadDotEnv() {
@@ -70,17 +100,14 @@ func loadDotEnv() {
 	}
 }
 
-func initTracing() *trace.BytePlusLogger {
-	byteplusLogger := trace.GetBytePlusLogger()
-	trace.SetLogger(byteplusLogger)
-	traceHandler := trace.CreateAPMPlusCallback(byteplusLogger)
+func initTracing() {
+	traceHandler := trace.CreateAPMPlusCallback()
 	callbacks.AppendGlobalHandlers(traceHandler)
 	log.Println("APMPlus trace callback initialized successfully")
-	return byteplusLogger
 }
 
 func loadAppConfig() (pkgctx.AppConfig, string) {
-	configPath := "configs/config.local.yaml"
+	configPath := "configs/config.yaml"
 	config, err := pkgctx.LoadConfig(configPath)
 	if err != nil {
 		log.Printf("Warning: Failed to load config file: %v, using default config", err)
@@ -131,7 +158,7 @@ func initGlobalLLM(ctx context.Context, config pkgctx.AppConfig) {
 	)
 }
 
-func initQueryService(ctx context.Context, store unifiedDataStore, embedder embedding.Embedder) *service.QueryService {
+func initQueryService(ctx context.Context, store unifiedDataStore, embedder embedding.Embedder, redisClient *redis.Client) *service.QueryService {
 	allowLocalSampleRetrieval := strings.EqualFold(strings.TrimSpace(os.Getenv("ENABLE_LOCAL_ONLY_RETRIEVAL")), "true")
 	ragHybridRetriever := ragretriever.NewHybridRetriever(ragretriever.HybridRetrieverConfig{
 		Store:                    store,
@@ -139,15 +166,27 @@ func initQueryService(ctx context.Context, store unifiedDataStore, embedder embe
 		VectorStore:              store,
 		LoadLocalSampleDocuments: allowLocalSampleRetrieval,
 	})
-	querySvc, err := service.NewQueryServiceWithDependencies(ctx, service.QueryServiceDependencies{
+
+	deps := service.QueryServiceDependencies{
 		Retriever:          ragHybridRetriever,
 		DocumentRepository: store,
 		VectorStore:        store,
 		Embedder:           embedder,
 		LLMClient:          llm.GetLLMClient(),
-	})
+	}
+	if redisClient != nil && embedder != nil {
+		deps.RedisClient = redisClient
+		deps.SemanticCacheConfig = cache.DefaultSemanticCacheConfig()
+	}
+
+	querySvc, err := service.NewQueryServiceWithDependencies(ctx, deps)
 	if err != nil {
 		log.Fatalf("init query service: %v", err)
+	}
+	if deps.RedisClient != nil {
+		log.Println("Semantic cache enabled for query service")
+	} else {
+		log.Println("Warning: Semantic cache disabled for query service (Redis or embedder unavailable)")
 	}
 	if allowLocalSampleRetrieval {
 		log.Println("local-only retrieval enabled for explicit evaluation/development requests")
@@ -245,7 +284,7 @@ func initAuthService(pgConversationStore *repository.PostgresConversationStore) 
 	return auth.NewAuthServiceImpl(userStore, sessionStore, jwtSecret), jwtSecret
 }
 
-func initChatService(querySvc *service.QueryService, conversationStore repository.UnifiedConversationStore, taskAgentService *service.TaskAgentService) *agent.ChatService {
+func initChatService(querySvc *service.QueryService, conversationStore repository.UnifiedConversationStore, pgConversationStore *repository.PostgresConversationStore, taskAgentService *service.TaskAgentService, store unifiedDataStore, embedder embedding.Embedder, redisClient *redis.Client) *agent.ChatService {
 	routeEngine := router.NewRouteEngine(
 		router.DefaultRouteConfig(),
 		nil,
@@ -262,13 +301,112 @@ func initChatService(querySvc *service.QueryService, conversationStore repositor
 	modeAgentExecutor := agent.NewModeAgentExecutor(taskAgentService)
 
 	agentExecutor := agent.NewAgentExecutor(chatExecutor, ragExecutor, analysisExecutor, modeAgentExecutor)
-	return agent.NewChatService(routeEngine, agentExecutor, conversationStore)
+
+	// 初始化精确缓存
+	redisHost := strings.TrimSpace(os.Getenv("REDIS_HOST"))
+	redisPort := strings.TrimSpace(os.Getenv("REDIS_PORT"))
+	redisPassword := strings.TrimSpace(os.Getenv("REDIS_PASSWORD"))
+	redisDB := 0
+
+	var exactCache *cache.ExactCache
+	// 如果没有传入 redisClient，创建一个新的
+	if redisClient == nil && redisHost != "" {
+		redisAddr := fmt.Sprintf("%s:%s", redisHost, redisPort)
+		redisClient = redis.NewClient(&redis.Options{
+			Addr:     redisAddr,
+			Password: redisPassword,
+			DB:       redisDB,
+		})
+	}
+
+	if redisClient != nil {
+		exactCache = cache.NewExactCache(redisClient, cache.DefaultExactCacheConfig())
+		log.Println("Exact cache initialized for chat service")
+	} else {
+		log.Println("Warning: REDIS_HOST not set, exact cache disabled for chat service")
+	}
+
+	// 初始化记忆存储
+	var workingMemory repository.WorkingMemoryStore
+	var sessionContext repository.SessionContextStore
+	var userMemory repository.UserMemoryStore
+
+	// 短期记忆：Redis
+	if redisClient != nil {
+		workingMemory = repository.NewRedisWorkingMemoryStore(redisClient)
+		log.Println("Working memory (short-term) initialized")
+	} else {
+		log.Println("Warning: Redis not available, working memory disabled")
+	}
+
+	// 中期记忆：PostgreSQL JSONB
+	if pgConversationStore != nil {
+		sessionContext = repository.NewPostgresSessionContextStore(pgConversationStore.DB())
+		// 初始化表结构
+		if err := sessionContext.(*repository.PostgresSessionContextStore).InitTables(context.Background()); err != nil {
+			log.Printf("Warning: Failed to initialize session context table: %v", err)
+		} else {
+			log.Println("Session context (medium-term) initialized")
+		}
+	} else {
+		log.Println("Warning: PostgreSQL not available, session context disabled")
+	}
+
+	// 长期记忆：PostgreSQL + Vector
+	if pgConversationStore != nil && store != nil && embedder != nil {
+		userMemory = repository.NewPostgresUserMemoryStore(pgConversationStore.DB(), store, embedder)
+		// 初始化表结构
+		if err := userMemory.(*repository.PostgresUserMemoryStore).InitTables(context.Background()); err != nil {
+			log.Printf("Warning: Failed to initialize user memory table: %v", err)
+		} else {
+			log.Println("User memory (long-term) initialized")
+		}
+	} else {
+		log.Println("Warning: Vector store or embedder not available, user memory disabled")
+	}
+
+	return agent.NewChatService(routeEngine, agentExecutor, conversationStore, exactCache, workingMemory, sessionContext, userMemory)
 }
 
-func serveHTTP(port string, mux *http.ServeMux) {
+// initRedisClient 初始化 Redis 客户端
+func initRedisClient() *redis.Client {
+	redisHost := strings.TrimSpace(os.Getenv("REDIS_HOST"))
+	redisPort := strings.TrimSpace(os.Getenv("REDIS_PORT"))
+	redisPassword := strings.TrimSpace(os.Getenv("REDIS_PASSWORD"))
+
+	if redisHost == "" {
+		log.Println("Warning: REDIS_HOST not set, Redis client not initialized")
+		return nil
+	}
+
+	redisAddr := fmt.Sprintf("%s:%s", redisHost, redisPort)
+	redisClient := redis.NewClient(&redis.Options{
+		Addr:         redisAddr,
+		Password:     redisPassword,
+		DB:           0,
+		PoolSize:     50,              // 连接池大小
+		MinIdleConns: 10,              // 最小空闲连接数
+		PoolTimeout:  4 * time.Second, // 连接池获取连接超时
+		ReadTimeout:  3 * time.Second, // 读取超时
+		WriteTimeout: 3 * time.Second, // 写入超时
+	})
+
+	// 测试连接
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := redisClient.Ping(ctx).Err(); err != nil {
+		log.Printf("Warning: Failed to connect to Redis: %v", err)
+		return nil
+	}
+
+	log.Println("Redis client initialized successfully")
+	return redisClient
+}
+
+func serveHTTP(port string, handler http.Handler) {
 	addr := ":" + port
 	log.Printf("stock_rag listening on %s", addr)
-	if err := http.ListenAndServe(addr, mux); err != nil {
+	if err := http.ListenAndServe(addr, handler); err != nil {
 		log.Fatal(err)
 	}
 }

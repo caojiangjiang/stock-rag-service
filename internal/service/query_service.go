@@ -8,11 +8,14 @@ import (
 	"time"
 
 	"github.com/cloudwego/eino/compose"
+	"github.com/redis/go-redis/v9"
 
+	"stock_rag/internal/cache"
 	"stock_rag/internal/concurrency"
 	ragchain "stock_rag/internal/eino/chain"
 	ragretriever "stock_rag/internal/eino/retriever"
 	"stock_rag/internal/embedding"
+	"stock_rag/internal/metrics"
 	appmodel "stock_rag/internal/model"
 	"stock_rag/internal/repository"
 	"stock_rag/internal/utils"
@@ -21,11 +24,13 @@ import (
 
 // QueryServiceDependencies 描述可注入的底层依赖。
 type QueryServiceDependencies struct {
-	LLMClient          *concurrency.LLMClient
-	Retriever          ragretriever.Retriever
-	DocumentRepository repository.DocumentRepository
-	Embedder           embedding.Embedder
-	VectorStore        vectorstore.VectorStore
+	LLMClient           *concurrency.LLMClient
+	Retriever           ragretriever.Retriever
+	DocumentRepository  repository.DocumentRepository
+	Embedder            embedding.Embedder
+	VectorStore         vectorstore.VectorStore
+	RedisClient         *redis.Client             // Redis 客户端（用于语义缓存）
+	SemanticCacheConfig cache.SemanticCacheConfig // 语义缓存配置
 }
 
 // QueryService 是 API 层和 Eino 层之间的业务编排层。
@@ -37,6 +42,7 @@ type QueryService struct {
 	repo          repository.DocumentRepository
 	embedder      embedding.Embedder
 	vectors       vectorstore.VectorStore
+	semanticCache *cache.RedisSemanticCache // 语义缓存
 	companyToCode map[string]string
 	codeToCompany map[string]string
 }
@@ -74,6 +80,23 @@ func NewQueryServiceWithDependencies(ctx context.Context, deps QueryServiceDepen
 		return nil, fmt.Errorf("failed to create skeleton runner: %w", err)
 	}
 
+	// 初始化语义缓存
+	var semanticCache *cache.RedisSemanticCache
+	if deps.RedisClient != nil && deps.Embedder != nil {
+		cacheConfig := deps.SemanticCacheConfig
+		if cacheConfig.SimilarityThreshold == 0 {
+			cacheConfig = cache.DefaultSemanticCacheConfig()
+		}
+		cacheConfig.Embedder = deps.Embedder
+		semanticCache = cache.NewRedisSemanticCache(deps.RedisClient, deps.Embedder, cacheConfig)
+		utils.Info("语义缓存已启用", utils.LogFields{
+			Message: fmt.Sprintf("threshold=%.2f, ttl=%s, max_size=%d",
+				cacheConfig.SimilarityThreshold, cacheConfig.TTL, cacheConfig.MaxCacheSize),
+		})
+	} else {
+		utils.Warning("语义缓存未启用（缺少 RedisClient 或 Embedder）", utils.LogFields{})
+	}
+
 	qs := &QueryService{
 		Name:          "query_service",
 		runner:        runner,
@@ -82,6 +105,7 @@ func NewQueryServiceWithDependencies(ctx context.Context, deps QueryServiceDepen
 		repo:          repo,
 		embedder:      deps.Embedder,
 		vectors:       deps.VectorStore,
+		semanticCache: semanticCache,
 		companyToCode: make(map[string]string),
 		codeToCompany: make(map[string]string),
 	}
@@ -263,6 +287,33 @@ func (s *QueryService) Query(ctx context.Context, req appmodel.RAGQueryRequest) 
 		}
 	}
 
+	// 1. 检查语义缓存
+	if s.semanticCache != nil {
+		cacheResult, err := s.semanticCache.Get(ctx, req.Question)
+		if err != nil {
+			utils.Warning("语义缓存查询失败", utils.LogFields{
+				StockCode: req.StockCode,
+				Message:   err.Error(),
+			})
+		} else if cacheResult.Hit {
+			metrics.RecordCacheHit("semantic")
+			// 缓存命中，直接返回
+			utils.Info("语义缓存命中", utils.LogFields{
+				StockCode:      req.StockCode,
+				RetrievedCount: len(cacheResult.Content),
+				Message: fmt.Sprintf("命中来源: %s, 相似度: %.2f, 访问次数: %d",
+					cacheResult.Source, cacheResult.Score, cacheResult.AccessCount),
+			})
+			return appmodel.RAGQueryResponse{
+				Answer:    cacheResult.Content,
+				Citations: []appmodel.Citation{}, // 缓存命中时不返回引用
+				RequestID: fmt.Sprintf("cache-%d", time.Now().UnixNano()),
+			}, nil
+		} else {
+			metrics.RecordCacheMiss("semantic")
+		}
+	}
+
 	utils.Info("开始执行RAG查询", utils.LogFields{
 		StockCode: req.StockCode,
 		TopK:      req.TopK,
@@ -281,6 +332,21 @@ func (s *QueryService) Query(ctx context.Context, req appmodel.RAGQueryRequest) 
 			Message:   err.Error(),
 		})
 		return resp, err
+	}
+
+	// 2. 写入语义缓存
+	if s.semanticCache != nil {
+		if err := s.semanticCache.Set(ctx, req.Question, resp.Answer); err != nil {
+			utils.Warning("语义缓存写入失败", utils.LogFields{
+				StockCode: req.StockCode,
+				Message:   err.Error(),
+			})
+		} else {
+			utils.Info("语义缓存已写入", utils.LogFields{
+				StockCode: req.StockCode,
+				Message:   fmt.Sprintf("问题: %s, 答案长度: %d", truncateString(req.Question, 50), len(resp.Answer)),
+			})
+		}
 	}
 
 	utils.Info("RAG查询完成", utils.LogFields{
@@ -302,6 +368,38 @@ func (s *QueryService) QueryStream(ctx context.Context, req appmodel.RAGQueryReq
 			utils.Info("自动提取股票代码", utils.LogFields{
 				StockCode: req.StockCode,
 			})
+		}
+	}
+
+	// 1. 检查语义缓存（流式查询也支持缓存命中）
+	if s.semanticCache != nil {
+		cacheResult, err := s.semanticCache.Get(ctx, req.Question)
+		if err != nil {
+			utils.Warning("语义缓存查询失败", utils.LogFields{
+				StockCode: req.StockCode,
+				Message:   err.Error(),
+			})
+		} else if cacheResult.Hit {
+			metrics.RecordCacheHit("semantic")
+			// 缓存命中，直接返回
+			utils.Info("语义缓存命中（流式查询）", utils.LogFields{
+				StockCode: req.StockCode,
+				Message: fmt.Sprintf("命中来源: %s, 相似度: %.2f, 访问次数: %d",
+					cacheResult.Source, cacheResult.Score, cacheResult.AccessCount),
+			})
+			// 使用缓存结果作为单个 chunk 返回
+			if onChunk != nil {
+				if err := onChunk(cacheResult.Content); err != nil {
+					return appmodel.RAGQueryResponse{}, err
+				}
+			}
+			return appmodel.RAGQueryResponse{
+				Answer:    cacheResult.Content,
+				Citations: []appmodel.Citation{},
+				RequestID: fmt.Sprintf("cache-%d", time.Now().UnixNano()),
+			}, nil
+		} else {
+			metrics.RecordCacheMiss("semantic")
 		}
 	}
 
@@ -391,6 +489,23 @@ func (s *QueryService) QueryStream(ctx context.Context, req appmodel.RAGQueryReq
 		return appmodel.RAGQueryResponse{}, err
 	}
 	answer = ragchain.ApplyAnswerGuard(prepared.Request, prepared.Chunks, answer)
+
+	// 2. 写入语义缓存（异步执行，避免阻塞响应）
+	if s.semanticCache != nil {
+		go func() {
+			if err := s.semanticCache.Set(context.Background(), req.Question, answer); err != nil {
+				utils.Warning("语义缓存写入失败（流式查询）", utils.LogFields{
+					StockCode: req.StockCode,
+					Message:   err.Error(),
+				})
+			} else {
+				utils.Info("语义缓存已写入（流式查询）", utils.LogFields{
+					StockCode: req.StockCode,
+					Message:   fmt.Sprintf("问题: %s, 答案长度: %d", truncateString(req.Question, 50), len(answer)),
+				})
+			}
+		}()
+	}
 
 	totalElapsed := time.Since(start)
 	utils.Info("大模型调用完成", utils.LogFields{

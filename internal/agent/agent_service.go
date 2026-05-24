@@ -3,10 +3,13 @@ package agent
 import (
 	"context"
 	"fmt"
-	"log"
 	"strings"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
+
+	"stock_rag/internal/cache"
+	"stock_rag/internal/observability"
 	"stock_rag/internal/repository"
 	"stock_rag/internal/router"
 )
@@ -17,20 +20,32 @@ const (
 )
 
 type ChatService struct {
-	routeEngine  *router.RouteEngine
-	executor     *AgentExecutor
-	conversation repository.UnifiedConversationStore
+	routeEngine    *router.RouteEngine
+	executor       *AgentExecutor
+	conversation   repository.UnifiedConversationStore
+	exactCache     *cache.ExactCache              // 精确缓存（原始问题MD5匹配）
+	workingMemory  repository.WorkingMemoryStore  // 短期记忆
+	sessionContext repository.SessionContextStore // 中期记忆
+	userMemory     repository.UserMemoryStore     // 长期记忆
 }
 
 func NewChatService(
 	routeEngine *router.RouteEngine,
 	executor *AgentExecutor,
 	conversation repository.UnifiedConversationStore,
+	exactCache *cache.ExactCache,
+	workingMemory repository.WorkingMemoryStore,
+	sessionContext repository.SessionContextStore,
+	userMemory repository.UserMemoryStore,
 ) *ChatService {
 	return &ChatService{
-		routeEngine:  routeEngine,
-		executor:     executor,
-		conversation: conversation,
+		routeEngine:    routeEngine,
+		executor:       executor,
+		conversation:   conversation,
+		exactCache:     exactCache,
+		workingMemory:  workingMemory,
+		sessionContext: sessionContext,
+		userMemory:     userMemory,
 	}
 }
 
@@ -57,39 +72,49 @@ type ChatResponse struct {
 }
 
 func (s *ChatService) Chat(ctx context.Context, req *ChatRequest) (*ChatResponse, error) {
+	ctx, span := observability.StartSpan(ctx, "ChatService.Chat")
+	defer span.End()
+
 	if req == nil {
 		err := fmt.Errorf("chat request is nil")
 		return &ChatResponse{Error: err.Error()}, err
 	}
+	if req.Mode != "" {
+		span.SetAttributes(attribute.String("chat.explicit_mode", req.Mode))
+	}
+	span.SetAttributes(attribute.String("chat.conversation_id", req.ConversationID))
 
 	startTime := time.Now()
 	req.Message = strings.TrimSpace(req.Message)
 	convID := strings.TrimSpace(req.ConversationID)
 	if convID == "" {
 		convID = newConversationID()
-		log.Printf("[AgentService] Generated new conversation ID: %s", convID)
+		observability.L().InfoCtx(ctx, "Generated new conversation ID", "conversation_id", convID)
 	}
 
-	log.Printf("[AgentService] Starting chat request - ConversationID: %s, UserID: %s, MessagePreview: %s",
-		convID, req.UserID, truncateMessageForLog(req.Message, 120))
+	observability.L().InfoCtx(ctx, "Starting chat request",
+		"conversation_id", convID,
+		"user_id", req.UserID,
+		"message_preview", truncateMessageForLog(req.Message, 120),
+	)
 
 	var explicitMode router.RouteMode
 	if req.Mode != "" {
 		explicitMode = router.RouteMode(req.Mode)
-		log.Printf("[AgentService] Explicit mode specified: %s", explicitMode)
+		observability.L().InfoCtx(ctx, "Explicit mode specified", "mode", string(explicitMode))
 	}
 
-	log.Printf("[AgentService] Fetching recent messages and conversation context")
+	observability.L().InfoCtx(ctx, "Fetching recent messages and conversation context")
 	recentMessages, err := s.getRecentMessages(ctx, convID, chatRecentMessageLimit)
 	if err != nil {
-		log.Printf("[AgentService] Failed to load recent messages: %v", err)
+		observability.L().ErrorCtx(ctx, "Failed to load recent messages", err)
 		recentMessages = []router.MessageContext{}
 	}
-	log.Printf("[AgentService] Found %d recent messages", len(recentMessages))
+	observability.L().InfoCtx(ctx, "Found recent messages", "count", len(recentMessages))
 
 	summary, err := s.getConversationSummary(ctx, convID)
 	if err != nil {
-		log.Printf("[AgentService] Failed to load conversation summary: %v", err)
+		observability.L().ErrorCtx(ctx, "Failed to load conversation summary", err)
 		summary = ""
 	}
 
@@ -97,9 +122,9 @@ func (s *ChatService) Chat(ctx context.Context, req *ChatRequest) (*ChatResponse
 	if lastRouteMode == "" {
 		lastRouteMode = s.getLastRouteMode(ctx, convID)
 	}
-	log.Printf("[AgentService] Last route mode: %s", lastRouteMode)
+	observability.L().InfoCtx(ctx, "Last route mode", "mode", string(lastRouteMode))
 
-	userMsg := repository.NewMessage(convID, "user", req.Message, nil)
+	userMsg := repository.NewMessage(convID, req.UserID, "user", req.Message, nil)
 
 	routeInput := &router.RouteInput{
 		MessageID:      userMsg.ID,
@@ -115,22 +140,51 @@ func (s *ChatService) Chat(ctx context.Context, req *ChatRequest) (*ChatResponse
 		TimeRange:      req.TimeRange,
 	}
 
-	log.Printf("[AgentService] Starting route decision")
+	observability.L().InfoCtx(ctx, "Starting route decision")
 	routeDecision, err := s.routeEngine.Route(ctx, routeInput)
 	if err != nil {
-		log.Printf("[AgentService] Route decision failed: %v", err)
+		observability.L().ErrorCtx(ctx, "Route decision failed", err)
 		return &ChatResponse{
 			ConversationID: convID,
 			Error:          "路由失败: " + err.Error(),
 		}, err
 	}
-	log.Printf("[AgentService] Route decision completed - SelectedMode: %s, MessageID: %s",
-		routeDecision.SelectedMode, routeDecision.MessageID)
+	observability.L().InfoCtx(ctx, "Route decision completed",
+		"selected_mode", string(routeDecision.SelectedMode),
+		"message_id", routeDecision.MessageID,
+	)
+
+	// 精确缓存查询（在路由决策之后执行之前）
+	// 使用原始问题 + 路由模式 + 股票代码 + 文档类型 + 时间范围 作为缓存键
+	if s.exactCache != nil {
+		cacheKey := buildExactCacheKey(req.Message, string(routeDecision.SelectedMode), req.StockCode, req.DocType, req.TimeRange)
+		cacheResult, err := s.exactCache.Get(ctx, cacheKey)
+		if err != nil {
+			observability.L().WarnCtx(ctx, "Exact cache query failed", "error", err)
+		} else if cacheResult.Hit {
+			observability.L().InfoCtx(ctx, "Exact cache hit, returning cached response",
+				"message_id", routeDecision.MessageID,
+				"access_count", cacheResult.AccessCount,
+			)
+			latency := int(time.Since(startTime).Milliseconds())
+			return &ChatResponse{
+				ConversationID: convID,
+				MessageID:      routeDecision.MessageID,
+				Content:        cacheResult.Response,
+				Mode:           string(routeDecision.SelectedMode),
+				InputTokens:    0,
+				OutputTokens:   0,
+				LatencyMs:      latency,
+				Citations:      nil,
+			}, nil
+		}
+		observability.L().InfoCtx(ctx, "Exact cache miss, proceeding with execution")
+	}
 
 	userMsg.RouteMode = string(routeDecision.SelectedMode)
 
 	if err := s.ensureConversationExists(ctx, convID, req.UserID, req.Message); err != nil {
-		log.Printf("[AgentService] Failed to ensure conversation exists: %v", err)
+		observability.L().ErrorCtx(ctx, "Failed to ensure conversation exists", err)
 		return &ChatResponse{
 			ConversationID: convID,
 			Error:          "创建会话失败: " + err.Error(),
@@ -138,13 +192,66 @@ func (s *ChatService) Chat(ctx context.Context, req *ChatRequest) (*ChatResponse
 	}
 
 	if err := s.conversation.SaveMessage(ctx, userMsg); err != nil {
-		log.Printf("[AgentService] Failed to save user message: %v", err)
+		observability.L().ErrorCtx(ctx, "Failed to save user message", err)
 		return &ChatResponse{
 			ConversationID: convID,
 			Error:          "保存用户消息失败: " + err.Error(),
 		}, err
 	}
-	log.Printf("[AgentService] User message saved - ConversationID: %s, MessageID: %s", convID, userMsg.ID)
+	observability.L().InfoCtx(ctx, "User message saved",
+		"conversation_id", convID,
+		"message_id", userMsg.ID,
+	)
+
+	// ========== 记忆操作 ==========
+	// 1. 查询短期记忆获取 TaskState 和实体引用
+	if s.workingMemory != nil {
+		// 查询当前任务状态
+		taskState, err := s.workingMemory.GetTaskState(ctx, convID)
+		if err == nil && taskState != nil {
+			observability.L().InfoCtx(ctx, "Loaded task state from working memory",
+				"goal", taskState.Goal,
+				"status", taskState.Status,
+			)
+			span.SetAttributes(attribute.String("memory.task_state.goal", taskState.Goal))
+		}
+
+		// 解析指代（如"它"、"那家"等）
+		referencedEntity, err := s.workingMemory.ResolveReference(ctx, convID, req.Message)
+		if err == nil && referencedEntity != "" {
+			observability.L().InfoCtx(ctx, "Resolved reference from working memory",
+				"entity", referencedEntity,
+			)
+			span.SetAttributes(attribute.String("memory.resolved_entity", referencedEntity))
+		}
+	}
+
+	// 2. 查询中期记忆获取已确认事实（避免重复检索）
+	var confirmedFacts []*repository.ConfirmedFact
+	if s.sessionContext != nil {
+		sessionCtx, err := s.sessionContext.Get(ctx, convID)
+		if err == nil && sessionCtx != nil {
+			// 检查是否有待验证的事实
+			pendingFacts, _ := s.sessionContext.GetPendingFacts(ctx, convID)
+			if len(pendingFacts) > 0 {
+				observability.L().InfoCtx(ctx, "Found pending facts in session context",
+					"count", len(pendingFacts),
+				)
+			}
+
+			// 如果有请求的股票代码，获取相关事实
+			if req.StockCode != "" {
+				entityFacts, _ := s.sessionContext.GetFactsByEntity(ctx, convID, req.StockCode)
+				for key, fact := range entityFacts {
+					confirmedFacts = append(confirmedFacts, fact)
+					observability.L().InfoCtx(ctx, "Found confirmed fact",
+						"key", key,
+						"value", fmt.Sprintf("%v", fact.Value),
+					)
+				}
+			}
+		}
+	}
 
 	executeReq := &ExecuteRequest{
 		ConversationID: convID,
@@ -157,11 +264,14 @@ func (s *ChatService) Chat(ctx context.Context, req *ChatRequest) (*ChatResponse
 		TimeRange:      req.TimeRange,
 	}
 
-	log.Printf("[AgentService] Executing request - ConversationID: %s, MessageID: %s, Mode: %s",
-		convID, userMsg.ID, routeDecision.SelectedMode)
+	observability.L().InfoCtx(ctx, "Executing request",
+		"conversation_id", convID,
+		"message_id", userMsg.ID,
+		"mode", string(routeDecision.SelectedMode),
+	)
 	executeResp, err := s.executor.Execute(ctx, executeReq)
 	if err != nil {
-		log.Printf("[AgentService] Execution failed: %v", err)
+		observability.L().ErrorCtx(ctx, "Execution failed", err)
 		return &ChatResponse{
 			ConversationID: convID,
 			Error:          "执行失败: " + err.Error(),
@@ -176,33 +286,54 @@ func (s *ChatService) Chat(ctx context.Context, req *ChatRequest) (*ChatResponse
 	}
 
 	if executeResp.Error != "" {
-		log.Printf("[AgentService] Execution returned error: %s", executeResp.Error)
+		observability.L().ErrorCtx(ctx, "Execution returned error", nil, "error", executeResp.Error)
 		return &ChatResponse{
 			ConversationID: convID,
 			Error:          executeResp.Error,
 		}, nil
 	}
 
-	log.Printf("[AgentService] Execution completed - MessageID: %s, ContentLength: %d, InputTokens: %d, OutputTokens: %d",
-		executeResp.MessageID, len(executeResp.Content), executeResp.InputTokens, executeResp.OutputTokens)
+	observability.L().InfoCtx(ctx, "Execution completed",
+		"message_id", executeResp.MessageID,
+		"content_length", len(executeResp.Content),
+		"input_tokens", executeResp.InputTokens,
+		"output_tokens", executeResp.OutputTokens,
+	)
 
-	assistantMsg := repository.NewMessage(convID, "assistant", executeResp.Content, nil)
+	// 执行成功后写入精确缓存（异步，避免阻塞响应）
+	if s.exactCache != nil {
+		cacheKey := buildExactCacheKey(req.Message, string(routeDecision.SelectedMode), req.StockCode, req.DocType, req.TimeRange)
+		go func() {
+			if err := s.exactCache.Set(context.Background(), cacheKey, executeResp.Content); err != nil {
+				observability.L().WarnCtx(context.Background(), "Exact cache set failed", "error", err)
+			} else {
+				observability.L().InfoCtx(context.Background(), "Exact cache entry added",
+					"cache_key", truncateString(cacheKey, 50),
+				)
+			}
+		}()
+	}
+
+	assistantMsg := repository.NewMessage(convID, req.UserID, "assistant", executeResp.Content, nil)
 	if executeResp.MessageID != "" {
 		assistantMsg.ID = executeResp.MessageID
 	}
 	assistantMsg.RouteMode = string(routeDecision.SelectedMode)
 	if err := s.conversation.SaveMessage(ctx, assistantMsg); err != nil {
-		log.Printf("[AgentService] Failed to save assistant message: %v", err)
+		observability.L().ErrorCtx(ctx, "Failed to save assistant message", err)
 		return &ChatResponse{
 			ConversationID: convID,
 			Error:          "保存助手消息失败: " + err.Error(),
 		}, err
 	}
-	log.Printf("[AgentService] Assistant message saved - ConversationID: %s, MessageID: %s", convID, assistantMsg.ID)
+	observability.L().InfoCtx(ctx, "Assistant message saved",
+		"conversation_id", convID,
+		"message_id", assistantMsg.ID,
+	)
 	executeResp.MessageID = assistantMsg.ID
 
 	latency := int(time.Since(startTime).Milliseconds())
-	log.Printf("[AgentService] Chat request completed - Total latency: %dms", latency)
+	observability.L().InfoCtx(ctx, "Chat request completed", "latency_ms", latency)
 
 	return &ChatResponse{
 		ConversationID: convID,
@@ -340,4 +471,21 @@ func (s *ChatService) citationsToInterface(citations []Citation) []interface{} {
 		}
 	}
 	return result
+}
+
+// buildExactCacheKey 构建精确缓存的复合键
+// 键 = message + mode + stockCode + docType + timeRange
+func buildExactCacheKey(message, mode, stockCode, docType, timeRange string) string {
+	// 使用简单的拼接方式构建复合键
+	// 因为后续会用 MD5 哈希，所以不需要手动处理分隔符
+	key := message + "|" + mode + "|" + stockCode + "|" + docType + "|" + timeRange
+	return key
+}
+
+// truncateString 截断字符串用于日志
+func truncateString(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
 }

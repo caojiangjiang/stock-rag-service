@@ -5,12 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"strconv"
 	"strings"
 
 	"stock_rag/internal/agent"
 	"stock_rag/internal/concurrency"
-	"stock_rag/internal/eino/trace"
+	"stock_rag/internal/observability"
+	"stock_rag/internal/pkgctx"
 	"stock_rag/internal/router"
 )
 
@@ -20,18 +20,15 @@ type chatService interface {
 
 type ChatHandler struct {
 	agentService chatService
-	logger       *trace.BytePlusLogger
 }
 
-func NewChatHandler(agentService chatService, logger *trace.BytePlusLogger) *ChatHandler {
-	return &ChatHandler{agentService: agentService, logger: logger}
+func NewChatHandler(agentService chatService) *ChatHandler {
+	return &ChatHandler{agentService: agentService}
 }
 
 func (h *ChatHandler) Chat(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		if h.logger != nil {
-			h.logger.SendLog(r.Context(), "WARNING", "Invalid HTTP method", map[string]string{"method": r.Method, "handler": "ChatHandler"})
-		}
+		observability.L().WarnCtx(r.Context(), "Invalid HTTP method", "method", r.Method, "handler", "ChatHandler")
 		writeJSON(w, http.StatusMethodNotAllowed, ErrorResponse{Error: "method not allowed"})
 		return
 	}
@@ -47,9 +44,7 @@ func (h *ChatHandler) Chat(w http.ResponseWriter, r *http.Request) {
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&req); err != nil {
-		if h.logger != nil {
-			h.logger.SendLog(r.Context(), "ERROR", "Failed to decode request body", map[string]string{"error": err.Error(), "handler": "ChatHandler"})
-		}
+		observability.L().ErrorCtx(r.Context(), "Failed to decode request body", err, "handler", "ChatHandler")
 		writeJSON(w, http.StatusBadRequest, ErrorResponse{Error: "invalid request body"})
 		return
 	}
@@ -65,17 +60,20 @@ func (h *ChatHandler) Chat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.logger != nil {
-		h.logger.SendLog(r.Context(), "INFO", "Received chat request", map[string]string{
-			"conversation_id": req.ConversationID,
-			"user_id":         req.UserID,
-			"message_preview": truncateForLog(req.Message, 120),
-			"mode":            req.Mode,
-			"handler":         "ChatHandler",
-		})
-	}
+	observability.L().InfoCtx(r.Context(), "Received chat request",
+		"conversation_id", req.ConversationID,
+		"user_id", req.UserID,
+		"message_preview", truncateForLog(req.Message, 120),
+		"mode", req.Mode,
+		"handler", "ChatHandler",
+	)
 
 	ctx := r.Context()
+
+	// 生成并设置 traceId
+	traceID := pkgctx.GenerateTraceID()
+	ctx = pkgctx.WithTraceID(ctx, traceID)
+
 	resp, err := h.agentService.Chat(ctx, &req)
 	if err != nil || (resp != nil && resp.Error != "") {
 		status := chatErrorStatus(err)
@@ -86,13 +84,11 @@ func (h *ChatHandler) Chat(w http.ResponseWriter, r *http.Request) {
 			message = err.Error()
 		}
 
-		if h.logger != nil {
-			h.logger.SendLog(ctx, "ERROR", "Chat service error", map[string]string{
-				"error":           message,
-				"conversation_id": req.ConversationID,
-				"handler":         "ChatHandler",
-			})
-		}
+		observability.L().ErrorCtx(ctx, "Chat service error", nil,
+			"error", message,
+			"conversation_id", req.ConversationID,
+			"handler", "ChatHandler",
+		)
 		writeJSON(w, status, ErrorResponse{Error: message})
 		return
 	}
@@ -102,15 +98,13 @@ func (h *ChatHandler) Chat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.logger != nil {
-		h.logger.SendLog(ctx, "INFO", "Chat response completed", map[string]string{
-			"conversation_id": resp.ConversationID,
-			"message_id":      resp.MessageID,
-			"mode":            resp.Mode,
-			"latency_ms":      strconv.FormatInt(int64(resp.LatencyMs), 10),
-			"handler":         "ChatHandler",
-		})
-	}
+	observability.L().InfoCtx(ctx, "Chat response completed",
+		"conversation_id", resp.ConversationID,
+		"message_id", resp.MessageID,
+		"mode", resp.Mode,
+		"latency_ms", resp.LatencyMs,
+		"handler", "ChatHandler",
+	)
 
 	writeJSON(w, http.StatusOK, resp)
 }

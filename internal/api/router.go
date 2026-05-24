@@ -4,10 +4,12 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"github.com/redis/go-redis/v9"
+
 	"stock_rag/internal/agent"
 	"stock_rag/internal/auth"
-	"stock_rag/internal/eino/trace"
 	"stock_rag/internal/llm"
+	"stock_rag/internal/metrics"
 	"stock_rag/internal/repository"
 	"stock_rag/internal/service"
 )
@@ -20,9 +22,21 @@ type Route struct {
 }
 
 // NewRouter 注册当前已经接通的 HTTP 路由。
-func NewRouter(querySvc QueryService, taskAgentService *service.TaskAgentService, authService auth.AuthService, jwtSecret string, chatService *agent.ChatService, conversationStore repository.UnifiedConversationStore, logger *trace.BytePlusLogger) *http.ServeMux {
+func NewRouter(querySvc QueryService, taskAgentService *service.TaskAgentService, authService auth.AuthService, jwtSecret string, chatService *agent.ChatService, conversationStore repository.UnifiedConversationStore, postgresDB Pinger, redisClient *redis.Client) *http.ServeMux {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/health", HealthHandler())
+
+	// 健康检查端点
+	healthDeps := HealthDependencies{
+		PostgresDB:  postgresDB,
+		RedisClient: redisClient,
+	}
+	mux.HandleFunc("/health/liveness", LivenessHandler())
+	mux.HandleFunc("/health/readiness", ReadinessHandler(healthDeps))
+	mux.HandleFunc("/health", HealthHandler()) // 保留兼容旧版本
+
+	// Prometheus metrics 端点
+	mux.Handle("/metrics", metrics.Handler())
+
 	mux.HandleFunc("/stats", StatsHandler())
 	mux.HandleFunc("/documents/import", DocumentsImportHandler(querySvc))
 	mux.HandleFunc("/documents", DocumentsListHandler(querySvc))
@@ -36,7 +50,7 @@ func NewRouter(querySvc QueryService, taskAgentService *service.TaskAgentService
 	mux.HandleFunc("/api/agent/session", agentHandler.GetSession)
 
 	// 统一聊天接口
-	chatHandler := NewChatHandler(chatService, logger)
+	chatHandler := NewChatHandler(chatService)
 	mux.HandleFunc("/api/chat", chatHandler.Chat)
 
 	// 对话管理接口

@@ -2,15 +2,8 @@ package trace
 
 import (
 	"context"
-	"fmt"
 	"time"
 )
-
-var globalLogger *BytePlusLogger
-
-func SetLogger(logger *BytePlusLogger) {
-	globalLogger = logger
-}
 
 // TraceEvent 表示一个trace事件
 type TraceEvent struct {
@@ -68,21 +61,6 @@ func (t *DefaultTracer) Start(ctx context.Context, component, operation string, 
 		}
 
 		t.events = append(t.events, event)
-
-		if globalLogger != nil {
-			fields := make(map[string]string)
-			fields["component"] = component
-			fields["operation"] = operation
-			fields["duration_ms"] = fmt.Sprintf("%d", durationMs)
-			fields["success"] = fmt.Sprintf("%v", success)
-			if errMsg != "" {
-				fields["error"] = errMsg
-			}
-			for k, v := range metadata {
-				fields[k] = fmt.Sprintf("%v", v)
-			}
-			globalLogger.SendLog(ctx, "DEBUG", fmt.Sprintf("%s.%s completed", component, operation), fields)
-		}
 	}
 }
 
@@ -100,20 +78,6 @@ func (t *DefaultTracer) Record(ctx context.Context, component, operation string,
 	}
 
 	t.events = append(t.events, event)
-
-	if globalLogger != nil {
-		fields := make(map[string]string)
-		fields["component"] = component
-		fields["operation"] = operation
-		for k, v := range metadata {
-			fields[k] = fmt.Sprintf("%v", v)
-		}
-		level := "DEBUG"
-		if operation == "error" || operation == "error_done" {
-			level = "ERROR"
-		}
-		globalLogger.SendLog(ctx, level, fmt.Sprintf("%s.%s recorded", component, operation), fields)
-	}
 }
 
 // GetEvents 获取所有trace事件
