@@ -1,7 +1,10 @@
 version: '3.8'
 
 services:
+  # 本地开发默认不构建 app；需要容器化 Go 服务时用: docker compose --profile app up -d
   app:
+    profiles:
+      - app
     build:
       context: .
       dockerfile: Dockerfile
@@ -43,6 +46,7 @@ services:
 
   redis:
     image: redis:7-alpine
+    container_name: stock_rag_redis
     ports:
       - "6379:6379"
     volumes:
@@ -58,7 +62,8 @@ services:
       - stock_rag_network
 
   postgres:
-    image: postgres:15-alpine
+    image: ankane/pgvector:latest
+    container_name: stock_rag_postgres
     ports:
       - "5432:5432"
     environment:
@@ -80,8 +85,9 @@ services:
   # Prometheus 用于指标收集
   prometheus:
     image: prom/prometheus:latest
+    container_name: stock_rag_prometheus
     ports:
-      - "9090:9090"
+      - "9091:9090"  # 宿主机 9090 常被占用，对外用 9091
     volumes:
       - ./configs/prometheus.yml:/etc/prometheus/prometheus.yml
       - ./configs/prometheus/rules:/etc/prometheus/rules
@@ -98,6 +104,7 @@ services:
 
   grafana:
     image: grafana/grafana:latest
+    container_name: stock_rag_grafana
     ports:
       - "3000:3000"
     environment:
@@ -118,7 +125,8 @@ services:
 
   # Jaeger 用于链路追踪
   jaeger:
-    image: jaegertracing/all-in-one:latest
+    image: jaegertracing/all-in-one:1.57
+    container_name: jaeger
     ports:
       - "16686:16686"  # Jaeger UI
       - "6831:6831/udp"  # Jaeger agent (compact thrift)
