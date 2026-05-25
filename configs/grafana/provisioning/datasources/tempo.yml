@@ -1,5 +1,9 @@
 apiVersion: 1
 
+deleteDatasources:
+  - name: Tempo
+    orgId: 1
+
 datasources:
   - name: Tempo
     type: tempo
@@ -12,13 +16,13 @@ datasources:
       httpMethod: GET
       tracesToLogsV2:
         datasourceUid: loki
-        spanStartTimeShift: -1h
-        spanEndTimeShift: 1h
-        filterByTraceID: true
+        spanStartTimeShift: -15m
+        spanEndTimeShift: 15m
+        tags: []
+        filterByTraceID: false
         filterBySpanID: false
         customQuery: true
-        # 用行过滤：即使 Promtail 未打上 trace_id 标签，只要日志行含 traceId 即可命中
-        query: '{job="stock_rag"} |= "${__trace.traceId}"'
+        query: '{job="stock_rag"} |= "$${__trace.traceId}"'
       lokiSearch:
         datasourceUid: loki
       serviceMap:
@@ -27,8 +31,10 @@ datasources:
         enabled: true
       search:
         hide: false
+      # 关闭 trace 查询的时间窗口：Grafana 会用「当前时间 ±1h」作为 start/end，
+      # 导致 Search 能搜到、按 ID 打开却 404（trace 实际发生在过去）
       traceQuery:
-        timeShiftEnabled: true
+        timeShiftEnabled: false
         spanStartTimeShift: -1h
         spanEndTimeShift: 1h
-    version: 1
+    version: 4

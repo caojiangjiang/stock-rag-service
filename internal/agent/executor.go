@@ -27,6 +27,7 @@ type ExecuteRequest struct {
 	StockCode      string
 	DocType        string
 	TimeRange      string
+	OnChunk        func(string) error
 }
 
 type ExecuteResponse struct {

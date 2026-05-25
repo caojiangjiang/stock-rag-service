@@ -22,6 +22,7 @@ import (
 	"stock_rag/internal/eino/trace"
 	"stock_rag/internal/embedding"
 	"stock_rag/internal/llm"
+	"stock_rag/internal/memory"
 	"stock_rag/internal/metrics"
 	"stock_rag/internal/observability"
 	"stock_rag/internal/pkg/limiter"
@@ -360,46 +361,29 @@ func initChatService(querySvc *service.QueryService, conversationStore repositor
 		log.Println("Warning: REDIS_HOST not set, exact cache disabled for chat service")
 	}
 
-	// 初始化记忆存储
-	var workingMemory repository.WorkingMemoryStore
-	var sessionContext repository.SessionContextStore
-	var userMemory repository.UserMemoryStore
-
-	// 短期记忆：Redis
-	if redisClient != nil {
-		workingMemory = repository.NewRedisWorkingMemoryStore(redisClient)
+	// 初始化记忆存储（短/中/长期）
+	memDeps := memory.Dependencies{
+		Redis:       redisClient,
+		VectorStore: store,
+		Embedder:    embedder,
+	}
+	if pgConversationStore != nil {
+		memDeps.DB = pgConversationStore.DB()
+	}
+	mem := memory.New(memory.DefaultConfig(), memDeps)
+	if pgConversationStore != nil {
+		if err := mem.InitSchema(context.Background()); err != nil {
+			log.Printf("Warning: Failed to initialize memory schema: %v", err)
+		} else {
+			log.Println("Memory stores (short/medium/long) initialized")
+		}
+	} else if redisClient != nil {
 		log.Println("Working memory (short-term) initialized")
 	} else {
-		log.Println("Warning: Redis not available, working memory disabled")
+		log.Println("Warning: memory stores disabled (no Redis/PostgreSQL)")
 	}
 
-	// 中期记忆：PostgreSQL JSONB
-	if pgConversationStore != nil {
-		sessionContext = repository.NewPostgresSessionContextStore(pgConversationStore.DB())
-		// 初始化表结构
-		if err := sessionContext.(*repository.PostgresSessionContextStore).InitTables(context.Background()); err != nil {
-			log.Printf("Warning: Failed to initialize session context table: %v", err)
-		} else {
-			log.Println("Session context (medium-term) initialized")
-		}
-	} else {
-		log.Println("Warning: PostgreSQL not available, session context disabled")
-	}
-
-	// 长期记忆：PostgreSQL + Vector
-	if pgConversationStore != nil && store != nil && embedder != nil {
-		userMemory = repository.NewPostgresUserMemoryStore(pgConversationStore.DB(), store, embedder)
-		// 初始化表结构
-		if err := userMemory.(*repository.PostgresUserMemoryStore).InitTables(context.Background()); err != nil {
-			log.Printf("Warning: Failed to initialize user memory table: %v", err)
-		} else {
-			log.Println("User memory (long-term) initialized")
-		}
-	} else {
-		log.Println("Warning: Vector store or embedder not available, user memory disabled")
-	}
-
-	return agent.NewChatService(routeEngine, agentExecutor, conversationStore, exactCache, workingMemory, sessionContext, userMemory)
+	return agent.NewChatService(routeEngine, agentExecutor, conversationStore, exactCache, mem)
 }
 
 // selectModeAgentExecutor 按环境变量选择 ModeAgent 实现。

@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"strconv"
 	"time"
+
+	"stock_rag/internal/pkg/httpmiddleware"
 )
 
 // HTTPMetricsMiddleware HTTP 指标中间件（标准 net/http 版本）
@@ -16,8 +18,8 @@ func HTTPMetricsMiddleware(next http.Handler) http.Handler {
 		// 记录开始时间
 		start := time.Now()
 
-		// 创建响应写入器包装以捕获状态码
-		wrapped := &statusCodeWriter{ResponseWriter: w, statusCode: http.StatusOK}
+		// 创建响应写入器包装以捕获状态码，并保留 SSE 所需的 Flusher
+		wrapped := &statusCodeWriter{ResponseWriter: httpmiddleware.PreserveFlusher(w), statusCode: http.StatusOK}
 
 		// 处理请求
 		next.ServeHTTP(wrapped, r)
@@ -45,4 +47,10 @@ type statusCodeWriter struct {
 func (w *statusCodeWriter) WriteHeader(code int) {
 	w.statusCode = code
 	w.ResponseWriter.WriteHeader(code)
+}
+
+func (w *statusCodeWriter) Flush() {
+	if f, ok := w.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
 }

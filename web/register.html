@@ -4,206 +4,86 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>注册 - Stock RAG</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            padding: 20px;
-        }
-
-        .register-container {
-            background: white;
-            border-radius: 15px;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-            padding: 40px;
-            width: 100%;
-            max-width: 400px;
-        }
-
-        .register-header {
-            text-align: center;
-            margin-bottom: 30px;
-        }
-
-        .register-header h1 {
-            color: #667eea;
-            font-size: 2rem;
-            margin-bottom: 10px;
-        }
-
-        .register-header p {
-            color: #666;
-            font-size: 1rem;
-        }
-
-        .form-group {
-            margin-bottom: 20px;
-        }
-
-        .form-group label {
-            display: block;
-            margin-bottom: 8px;
-            color: #333;
-            font-weight: 500;
-        }
-
-        .form-group input {
-            width: 100%;
-            padding: 12px 15px;
-            border: 2px solid #e0e0e0;
-            border-radius: 8px;
-            font-size: 1rem;
-            transition: border-color 0.3s;
-        }
-
-        .form-group input:focus {
-            outline: none;
-            border-color: #667eea;
-        }
-
-        .btn {
-            width: 100%;
-            padding: 14px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            border: none;
-            border-radius: 8px;
-            font-size: 1.1rem;
-            font-weight: 600;
-            cursor: pointer;
-            transition: transform 0.2s, box-shadow 0.2s;
-        }
-
-        .btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
-        }
-
-        .btn:active {
-            transform: translateY(0);
-        }
-
-        .error {
-            background: #fee;
-            color: #c00;
-            padding: 12px;
-            border-radius: 8px;
-            margin-bottom: 20px;
-            font-size: 0.9rem;
-            display: none;
-        }
-
-        .error.show {
-            display: block;
-        }
-
-        .links {
-            text-align: center;
-            margin-top: 20px;
-        }
-
-        .links a {
-            color: #667eea;
-            text-decoration: none;
-            font-weight: 500;
-        }
-
-        .links a:hover {
-            text-decoration: underline;
-        }
-    </style>
+    <link rel="stylesheet" href="css/app.css">
 </head>
 <body>
-    <div class="register-container">
-        <div class="register-header">
-            <h1>Stock RAG</h1>
-            <p>创建您的账号</p>
-        </div>
+    <div class="auth-page">
+        <div class="auth-card">
+            <h1>创建账号</h1>
+            <p class="subtitle">注册 Stock RAG 智能分析账户</p>
 
-        <div id="error" class="error"></div>
+            <div id="error" class="alert-error"></div>
 
-        <form id="registerForm">
-            <div class="form-group">
-                <label for="username">用户名</label>
-                <input type="text" id="username" name="username" required minlength="3" maxlength="20" placeholder="3-20个字符">
+            <form id="registerForm">
+                <div class="form-group">
+                    <label for="username">用户名</label>
+                    <input type="text" id="username" required minlength="3" maxlength="20" placeholder="3–20 个字符">
+                </div>
+                <div class="form-group">
+                    <label for="email">邮箱</label>
+                    <input type="email" id="email" required placeholder="your@email.com">
+                </div>
+                <div class="form-group">
+                    <label for="password">密码</label>
+                    <input type="password" id="password" required minlength="6" placeholder="至少 6 位">
+                </div>
+                <div class="form-group">
+                    <label for="confirmPassword">确认密码</label>
+                    <input type="password" id="confirmPassword" required minlength="6" placeholder="再次输入密码">
+                </div>
+                <button type="submit" class="btn btn-primary btn-block">注册</button>
+            </form>
+
+            <div class="auth-links">
+                <p>已有账号？ <a href="login.html">立即登录</a></p>
             </div>
-
-            <div class="form-group">
-                <label for="email">邮箱</label>
-                <input type="email" id="email" name="email" required placeholder="请输入邮箱">
-            </div>
-
-            <div class="form-group">
-                <label for="password">密码</label>
-                <input type="password" id="password" name="password" required minlength="6" placeholder="至少6个字符">
-            </div>
-
-            <div class="form-group">
-                <label for="confirmPassword">确认密码</label>
-                <input type="password" id="confirmPassword" name="confirmPassword" required minlength="6" placeholder="再次输入密码">
-            </div>
-
-            <button type="submit" class="btn">注册</button>
-        </form>
-
-        <div class="links">
-            <p>已有账号？ <a href="login.html">立即登录</a></p>
-            <p style="margin-top: 10px;"><a href="index.html">游客访问</a></p>
         </div>
     </div>
 
+    <script src="js/auth.js"></script>
     <script>
-        document.getElementById('registerForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
+        document.addEventListener('DOMContentLoaded', async () => {
+            if (await Auth.redirectIfAuthenticated()) return;
 
-            const username = document.getElementById('username').value;
-            const email = document.getElementById('email').value;
-            const password = document.getElementById('password').value;
-            const confirmPassword = document.getElementById('confirmPassword').value;
+            const form = document.getElementById('registerForm');
             const errorDiv = document.getElementById('error');
 
-            errorDiv.classList.remove('show');
-            errorDiv.textContent = '';
+            form.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                errorDiv.classList.remove('show');
+                errorDiv.textContent = '';
 
-            if (password !== confirmPassword) {
-                errorDiv.textContent = '两次输入的密码不一致';
-                errorDiv.classList.add('show');
-                return;
-            }
+                const password = document.getElementById('password').value;
+                const confirmPassword = document.getElementById('confirmPassword').value;
+                if (password !== confirmPassword) {
+                    errorDiv.textContent = '两次输入的密码不一致';
+                    errorDiv.classList.add('show');
+                    return;
+                }
 
-            try {
-                const response = await fetch('/api/auth/register', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({ username, email, password }),
-                });
-
-                const data = await response.json();
-
-                if (response.ok) {
-                    localStorage.setItem('token', data.token);
-                    localStorage.setItem('user', JSON.stringify(data.user));
-                    window.location.href = 'index.html';
-                } else {
-                    errorDiv.textContent = data.error || '注册失败';
+                try {
+                    const res = await fetch('/api/auth/register', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            username: document.getElementById('username').value,
+                            email: document.getElementById('email').value,
+                            password,
+                        }),
+                    });
+                    const data = await res.json();
+                    if (res.ok) {
+                        Auth.saveSession(data);
+                        location.replace('index.html');
+                    } else {
+                        errorDiv.textContent = data.error || '注册失败';
+                        errorDiv.classList.add('show');
+                    }
+                } catch {
+                    errorDiv.textContent = '网络错误，请稍后重试';
                     errorDiv.classList.add('show');
                 }
-            } catch (error) {
-                errorDiv.textContent = '网络错误，请稍后重试';
-                errorDiv.classList.add('show');
-            }
+            });
         });
     </script>
 </body>

@@ -23,6 +23,14 @@ func (f *fakeChatService) Chat(ctx context.Context, req *agent.ChatRequest) (*ag
 	return f.resp, f.err
 }
 
+func (f *fakeChatService) ChatStream(ctx context.Context, req *agent.ChatRequest, onChunk func(string) error) (*agent.ChatResponse, error) {
+	f.called = true
+	if onChunk != nil && f.resp != nil && f.resp.Content != "" {
+		_ = onChunk(f.resp.Content)
+	}
+	return f.resp, f.err
+}
+
 func TestChatHandlerRejectsUnknownFields(t *testing.T) {
 	handler := NewChatHandler(&fakeChatService{})
 	req := httptest.NewRequest(http.MethodPost, "/api/chat", bytes.NewBufferString(`{"message":"你好","unexpected":true}`))

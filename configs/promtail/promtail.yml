@@ -17,29 +17,23 @@ scrape_configs:
         labels:
           job: stock_rag
           service: stock_rag
+          service_name: stock_rag
           __path__: /var/log/stock_rag/*.log
     pipeline_stages:
-      # 结构化 JSON 日志（observability.L().InfoCtx）
       - match:
           selector: '{job="stock_rag"} |~ "^\\{"'
           stages:
             - json:
                 expressions:
+                  timestamp: timestamp
                   trace_id: trace_id
                   span_id: span_id
                   level: level
                   message: message
                   service: service
+            - timestamp:
+                source: timestamp
+                format: RFC3339
+            # 仅保留低基数标签；trace_id 用 LogQL 行过滤 |=，避免 Loki 高基数 stream 爆炸
             - labels:
-                trace_id:
-                span_id:
                 level:
-      # 行内包含 32 位 OTel trace_id 时兜底打标签（便于 LogQL 按标签查）
-      - regex:
-          expression: '"trace_id":"(?P<trace_id>[0-9a-f]{32})"'
-      - labels:
-          trace_id:
-      - regex:
-          expression: '"span_id":"(?P<span_id>[0-9a-f]{16})"'
-      - labels:
-          span_id:

@@ -9,6 +9,8 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 
 	"stock_rag/internal/cache"
+	"stock_rag/internal/memory"
+	"stock_rag/internal/memory/medium"
 	"stock_rag/internal/metrics"
 	"stock_rag/internal/observability"
 	"stock_rag/internal/repository"
@@ -23,11 +25,9 @@ const (
 type ChatService struct {
 	routeEngine    *router.RouteEngine
 	executor       *AgentExecutor
-	conversation   repository.UnifiedConversationStore
-	exactCache     *cache.ExactCache              // 精确缓存（原始问题MD5匹配）
-	workingMemory  repository.WorkingMemoryStore  // 短期记忆
-	sessionContext repository.SessionContextStore // 中期记忆
-	userMemory     repository.UserMemoryStore     // 长期记忆
+	conversation repository.UnifiedConversationStore
+	exactCache     *cache.ExactCache // 精确缓存（原始问题MD5匹配）
+	mem            memory.Memory     // 短/中/长期记忆
 }
 
 func NewChatService(
@@ -35,18 +35,14 @@ func NewChatService(
 	executor *AgentExecutor,
 	conversation repository.UnifiedConversationStore,
 	exactCache *cache.ExactCache,
-	workingMemory repository.WorkingMemoryStore,
-	sessionContext repository.SessionContextStore,
-	userMemory repository.UserMemoryStore,
+	mem memory.Memory,
 ) *ChatService {
 	return &ChatService{
-		routeEngine:    routeEngine,
-		executor:       executor,
-		conversation:   conversation,
-		exactCache:     exactCache,
-		workingMemory:  workingMemory,
-		sessionContext: sessionContext,
-		userMemory:     userMemory,
+		routeEngine:  routeEngine,
+		executor:     executor,
+		conversation: conversation,
+		exactCache:   exactCache,
+		mem:          mem,
 	}
 }
 
@@ -72,8 +68,20 @@ type ChatResponse struct {
 	Error          string        `json:"error,omitempty"`
 }
 
-func (s *ChatService) Chat(ctx context.Context, req *ChatRequest) (resp *ChatResponse, err error) {
+func (s *ChatService) Chat(ctx context.Context, req *ChatRequest) (*ChatResponse, error) {
 	ctx, span := observability.StartSpan(ctx, "ChatService.Chat")
+	defer span.End()
+	return s.chat(ctx, req, nil)
+}
+
+func (s *ChatService) ChatStream(ctx context.Context, req *ChatRequest, onChunk func(string) error) (*ChatResponse, error) {
+	ctx, span := observability.StartSpan(ctx, "ChatService.ChatStream")
+	defer span.End()
+	return s.chat(ctx, req, onChunk)
+}
+
+func (s *ChatService) chat(ctx context.Context, req *ChatRequest, onChunk func(string) error) (resp *ChatResponse, err error) {
+	ctx, span := observability.StartSpan(ctx, "ChatService.processChat")
 	defer span.End()
 
 	startTime := time.Now()
@@ -185,6 +193,14 @@ func (s *ChatService) Chat(ctx context.Context, req *ChatRequest) (resp *ChatRes
 				"message_id", routeDecision.MessageID,
 				"access_count", cacheResult.AccessCount,
 			)
+			if onChunk != nil {
+				if err := EmitStreamChunks(onChunk, cacheResult.Response); err != nil {
+					return &ChatResponse{
+						ConversationID: convID,
+						Error:          "流式输出失败: " + err.Error(),
+					}, err
+				}
+			}
 			latency := int(time.Since(startTime).Milliseconds())
 			return &ChatResponse{
 				ConversationID: convID,
@@ -225,9 +241,9 @@ func (s *ChatService) Chat(ctx context.Context, req *ChatRequest) (resp *ChatRes
 
 	// ========== 记忆操作 ==========
 	// 1. 查询短期记忆获取 TaskState 和实体引用
-	if s.workingMemory != nil {
+	if s.mem != nil && s.mem.Short() != nil {
 		// 查询当前任务状态
-		taskState, err := s.workingMemory.GetTaskState(ctx, convID)
+		taskState, err := s.mem.Short().GetTaskState(ctx, convID)
 		if err == nil && taskState != nil {
 			observability.L().InfoCtx(ctx, "Loaded task state from working memory",
 				"goal", taskState.Goal,
@@ -237,7 +253,7 @@ func (s *ChatService) Chat(ctx context.Context, req *ChatRequest) (resp *ChatRes
 		}
 
 		// 解析指代（如"它"、"那家"等）
-		referencedEntity, err := s.workingMemory.ResolveReference(ctx, convID, req.Message)
+		referencedEntity, err := s.mem.Short().ResolveReference(ctx, convID, req.Message)
 		if err == nil && referencedEntity != "" {
 			observability.L().InfoCtx(ctx, "Resolved reference from working memory",
 				"entity", referencedEntity,
@@ -247,12 +263,12 @@ func (s *ChatService) Chat(ctx context.Context, req *ChatRequest) (resp *ChatRes
 	}
 
 	// 2. 查询中期记忆获取已确认事实（避免重复检索）
-	var confirmedFacts []*repository.ConfirmedFact
-	if s.sessionContext != nil {
-		sessionCtx, err := s.sessionContext.Get(ctx, convID)
+	var confirmedFacts []*medium.ConfirmedFact
+	if s.mem != nil && s.mem.Medium() != nil {
+		sessionCtx, err := s.mem.Medium().Get(ctx, convID)
 		if err == nil && sessionCtx != nil {
 			// 检查是否有待验证的事实
-			pendingFacts, _ := s.sessionContext.GetPendingFacts(ctx, convID)
+			pendingFacts, _ := s.mem.Medium().GetPendingFacts(ctx, convID)
 			if len(pendingFacts) > 0 {
 				observability.L().InfoCtx(ctx, "Found pending facts in session context",
 					"count", len(pendingFacts),
@@ -261,7 +277,7 @@ func (s *ChatService) Chat(ctx context.Context, req *ChatRequest) (resp *ChatRes
 
 			// 如果有请求的股票代码，获取相关事实
 			if req.StockCode != "" {
-				entityFacts, _ := s.sessionContext.GetFactsByEntity(ctx, convID, req.StockCode)
+				entityFacts, _ := s.mem.Medium().GetFactsByEntity(ctx, convID, req.StockCode)
 				for key, fact := range entityFacts {
 					confirmedFacts = append(confirmedFacts, fact)
 					observability.L().InfoCtx(ctx, "Found confirmed fact",
@@ -282,6 +298,9 @@ func (s *ChatService) Chat(ctx context.Context, req *ChatRequest) (resp *ChatRes
 		StockCode:      req.StockCode,
 		DocType:        req.DocType,
 		TimeRange:      req.TimeRange,
+	}
+	if onChunk != nil && routeDecision.SelectedMode != router.ModeAgent {
+		executeReq.OnChunk = onChunk
 	}
 
 	observability.L().InfoCtx(ctx, "Executing request",
@@ -311,6 +330,15 @@ func (s *ChatService) Chat(ctx context.Context, req *ChatRequest) (resp *ChatRes
 			ConversationID: convID,
 			Error:          executeResp.Error,
 		}, nil
+	}
+
+	if onChunk != nil && routeDecision.SelectedMode == router.ModeAgent {
+		if err := EmitStreamChunks(onChunk, executeResp.Content); err != nil {
+			return &ChatResponse{
+				ConversationID: convID,
+				Error:          "流式输出失败: " + err.Error(),
+			}, err
+		}
 	}
 
 	observability.L().InfoCtx(ctx, "Execution completed",

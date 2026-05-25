@@ -59,6 +59,7 @@ func NewRouter(querySvc QueryService, taskAgentService *service.TaskAgentService
 
 	chatHandler := NewChatHandler(chatService)
 	mux.HandleFunc("/api/chat", longRunning(requireAuth(chatHandler.Chat)))
+	mux.HandleFunc("/api/chat/stream", longRunning(requireAuth(chatHandler.ChatStream)))
 
 	convHandler := NewConversationHandler(conversationStore)
 	mux.HandleFunc("/api/conversations", requireAuth(convHandler.ListConversations))
@@ -85,6 +86,7 @@ func DefaultRoutes() []Route {
 		{Method: "POST", Path: "/rag/query", Usage: "普通问答"},
 		{Method: "POST", Path: "/rag/query/stream", Usage: "流式问答"},
 		{Method: "POST", Path: "/api/chat", Usage: "统一聊天接口（支持自动路由）"},
+		{Method: "POST", Path: "/api/chat/stream", Usage: "统一聊天流式接口（SSE）"},
 		{Method: "POST", Path: "/agent/execute", Usage: "执行 Agent 任务"},
 		{Method: "GET", Path: "/agent/analyze-stock", Usage: "分析股票"},
 	}

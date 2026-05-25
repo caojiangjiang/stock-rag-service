@@ -22,9 +22,9 @@ func TestTimeoutReturnsGatewayTimeout(t *testing.T) {
 	rec := httptest.NewRecorder()
 	handler(rec, req)
 
-	// http.TimeoutHandler 超时时返回 503 Service Unavailable
-	if rec.Code != http.StatusServiceUnavailable {
-		t.Fatalf("expected %d, got %d", http.StatusServiceUnavailable, rec.Code)
+	// 超时且 handler 未写响应时返回 504 Gateway Timeout
+	if rec.Code != http.StatusGatewayTimeout {
+		t.Fatalf("expected %d, got %d", http.StatusGatewayTimeout, rec.Code)
 	}
 }
 

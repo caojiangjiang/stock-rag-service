@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"time"
 
+	"stock_rag/internal/pkg/httpmiddleware"
+
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -21,6 +23,12 @@ type statusRecorder struct {
 func (r *statusRecorder) WriteHeader(code int) {
 	r.status = code
 	r.ResponseWriter.WriteHeader(code)
+}
+
+func (r *statusRecorder) Flush() {
+	if f, ok := r.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
 }
 
 // TracingMiddleware 为每个 HTTP 请求创建 root span，注入 TraceID 到响应头与日志
@@ -51,7 +59,7 @@ func TracingMiddleware(serviceName string) func(http.Handler) http.Handler {
 			traceID := span.SpanContext().TraceID().String()
 			w.Header().Set("X-Trace-Id", traceID)
 
-			rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+			rec := &statusRecorder{ResponseWriter: httpmiddleware.PreserveFlusher(w), status: http.StatusOK}
 			start := time.Now()
 			next.ServeHTTP(rec, r.WithContext(ctx))
 			latency := time.Since(start)

@@ -30,6 +30,14 @@ schema_config:
 limits_config:
   retention_period: 168h
   allow_structured_metadata: true
+  # 开发环境：允许 Promtail 重放 app.log 中带历史 timestamp 的 JSON 行
+  reject_old_samples: false
+  reject_old_samples_max_age: 168h
+  creation_grace_period: 168h
+  ingestion_rate_mb: 16
+  ingestion_burst_size_mb: 32
+  max_streams_per_user: 10000
+  max_label_names_per_series: 30
 
 analytics:
   reporting_enabled: false

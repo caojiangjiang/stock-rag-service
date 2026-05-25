@@ -132,8 +132,9 @@ func (e *RAGExecutor) Execute(ctx context.Context, req *ExecuteRequest) (*Execut
 	content, err := e.llmClient.Generate(ctx, &concurrency.LLMRequest{
 		Question: req.UserMessage,
 		TaskType: "rag",
-		Stream:   false,
+		Stream:   req.OnChunk != nil,
 		Messages: messages,
+		OnChunk:  req.OnChunk,
 	})
 	if err != nil {
 		return &ExecuteResponse{
@@ -245,8 +246,9 @@ func (e *AnalysisExecutor) Execute(ctx context.Context, req *ExecuteRequest) (*E
 	content, err := e.llmClient.Generate(ctx, &concurrency.LLMRequest{
 		Question: req.UserMessage,
 		TaskType: "analysis",
-		Stream:   false,
+		Stream:   req.OnChunk != nil,
 		Messages: messages,
+		OnChunk:  req.OnChunk,
 	})
 	if err != nil {
 		return &ExecuteResponse{

@@ -4,188 +4,70 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>登录 - Stock RAG</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            padding: 20px;
-        }
-
-        .login-container {
-            background: white;
-            border-radius: 15px;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-            padding: 40px;
-            width: 100%;
-            max-width: 400px;
-        }
-
-        .login-header {
-            text-align: center;
-            margin-bottom: 30px;
-        }
-
-        .login-header h1 {
-            color: #667eea;
-            font-size: 2rem;
-            margin-bottom: 10px;
-        }
-
-        .login-header p {
-            color: #666;
-            font-size: 1rem;
-        }
-
-        .form-group {
-            margin-bottom: 20px;
-        }
-
-        .form-group label {
-            display: block;
-            margin-bottom: 8px;
-            color: #333;
-            font-weight: 500;
-        }
-
-        .form-group input {
-            width: 100%;
-            padding: 12px 15px;
-            border: 2px solid #e0e0e0;
-            border-radius: 8px;
-            font-size: 1rem;
-            transition: border-color 0.3s;
-        }
-
-        .form-group input:focus {
-            outline: none;
-            border-color: #667eea;
-        }
-
-        .btn {
-            width: 100%;
-            padding: 14px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            border: none;
-            border-radius: 8px;
-            font-size: 1.1rem;
-            font-weight: 600;
-            cursor: pointer;
-            transition: transform 0.2s, box-shadow 0.2s;
-        }
-
-        .btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
-        }
-
-        .btn:active {
-            transform: translateY(0);
-        }
-
-        .error {
-            background: #fee;
-            color: #c00;
-            padding: 12px;
-            border-radius: 8px;
-            margin-bottom: 20px;
-            font-size: 0.9rem;
-            display: none;
-        }
-
-        .error.show {
-            display: block;
-        }
-
-        .links {
-            text-align: center;
-            margin-top: 20px;
-        }
-
-        .links a {
-            color: #667eea;
-            text-decoration: none;
-            font-weight: 500;
-        }
-
-        .links a:hover {
-            text-decoration: underline;
-        }
-    </style>
+    <link rel="stylesheet" href="css/app.css">
 </head>
 <body>
-    <div class="login-container">
-        <div class="login-header">
+    <div class="auth-page">
+        <div class="auth-card">
             <h1>Stock RAG</h1>
-            <p>智能股票分析系统</p>
-        </div>
+            <p class="subtitle">登录以使用股票智能分析</p>
 
-        <div id="error" class="error"></div>
+            <div id="error" class="alert-error"></div>
 
-        <form id="loginForm">
-            <div class="form-group">
-                <label for="username">用户名</label>
-                <input type="text" id="username" name="username" required minlength="3" maxlength="20" placeholder="请输入用户名">
+            <form id="loginForm">
+                <div class="form-group">
+                    <label for="username">用户名</label>
+                    <input type="text" id="username" required minlength="3" maxlength="20" placeholder="3–20 个字符" autocomplete="username">
+                </div>
+                <div class="form-group">
+                    <label for="password">密码</label>
+                    <input type="password" id="password" required minlength="6" placeholder="至少 6 位" autocomplete="current-password">
+                </div>
+                <button type="submit" class="btn btn-primary btn-block">登录</button>
+            </form>
+
+            <div class="auth-links">
+                <p>还没有账号？ <a href="register.html">立即注册</a></p>
             </div>
-
-            <div class="form-group">
-                <label for="password">密码</label>
-                <input type="password" id="password" name="password" required minlength="6" placeholder="请输入密码">
-            </div>
-
-            <button type="submit" class="btn">登录</button>
-        </form>
-
-        <div class="links">
-            <p>还没有账号？ <a href="register.html">立即注册</a></p>
-            <p style="margin-top: 10px;"><a href="index.html">游客访问</a></p>
         </div>
     </div>
 
+    <script src="js/auth.js"></script>
     <script>
-        document.getElementById('loginForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
+        document.addEventListener('DOMContentLoaded', async () => {
+            if (await Auth.redirectIfAuthenticated()) return;
 
-            const username = document.getElementById('username').value;
-            const password = document.getElementById('password').value;
+            const form = document.getElementById('loginForm');
             const errorDiv = document.getElementById('error');
 
-            errorDiv.classList.remove('show');
-            errorDiv.textContent = '';
+            form.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                errorDiv.classList.remove('show');
+                errorDiv.textContent = '';
 
-            try {
-                const response = await fetch('/api/auth/login', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({ username, password }),
-                });
-
-                const data = await response.json();
-
-                if (response.ok) {
-                    localStorage.setItem('token', data.token);
-                    localStorage.setItem('user', JSON.stringify(data.user));
-                    window.location.href = 'index.html';
-                } else {
-                    errorDiv.textContent = data.error || '登录失败';
+                try {
+                    const res = await fetch('/api/auth/login', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            username: document.getElementById('username').value,
+                            password: document.getElementById('password').value,
+                        }),
+                    });
+                    const data = await res.json();
+                    if (res.ok) {
+                        Auth.saveSession(data);
+                        const params = new URLSearchParams(location.search);
+                        location.replace(params.get('next') || 'index.html');
+                    } else {
+                        errorDiv.textContent = data.error || '登录失败';
+                        errorDiv.classList.add('show');
+                    }
+                } catch {
+                    errorDiv.textContent = '网络错误，请稍后重试';
                     errorDiv.classList.add('show');
                 }
-            } catch (error) {
-                errorDiv.textContent = '网络错误，请稍后重试';
-                errorDiv.classList.add('show');
-            }
+            });
         });
     </script>
 </body>

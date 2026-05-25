@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
@@ -16,6 +15,7 @@ import (
 
 type chatService interface {
 	Chat(ctx context.Context, req *agent.ChatRequest) (*agent.ChatResponse, error)
+	ChatStream(ctx context.Context, req *agent.ChatRequest, onChunk func(string) error) (*agent.ChatResponse, error)
 }
 
 type ChatHandler struct {
@@ -40,23 +40,9 @@ func (h *ChatHandler) Chat(w http.ResponseWriter, r *http.Request) {
 
 	defer r.Body.Close()
 
-	var req agent.ChatRequest
-	decoder := json.NewDecoder(r.Body)
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&req); err != nil {
-		observability.L().ErrorCtx(r.Context(), "Failed to decode request body", err, "handler", "ChatHandler")
-		writeJSON(w, http.StatusBadRequest, ErrorResponse{Error: "invalid request body"})
-		return
-	}
-
-	req.Message = strings.TrimSpace(req.Message)
-	if req.Message == "" {
-		writeJSON(w, http.StatusBadRequest, ErrorResponse{Error: "message is required"})
-		return
-	}
-
-	if req.Mode != "" && !isValidChatMode(req.Mode) {
-		writeJSON(w, http.StatusBadRequest, ErrorResponse{Error: "invalid mode"})
+	req, status, errMsg := decodeChatRequest(r)
+	if status != 0 {
+		writeJSON(w, status, ErrorResponse{Error: errMsg})
 		return
 	}
 
@@ -74,7 +60,7 @@ func (h *ChatHandler) Chat(w http.ResponseWriter, r *http.Request) {
 	traceID := pkgctx.GenerateTraceID()
 	ctx = pkgctx.WithTraceID(ctx, traceID)
 
-	resp, err := h.agentService.Chat(ctx, &req)
+	resp, err := h.agentService.Chat(ctx, req)
 	if err != nil || (resp != nil && resp.Error != "") {
 		status := chatErrorStatus(err)
 		message := "chat failed"
