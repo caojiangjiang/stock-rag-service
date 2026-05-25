@@ -1,3 +1,5 @@
+//go:build integration
+
 package vectorstore
 
 import (
@@ -43,7 +45,7 @@ func setupTestDB(t *testing.T) (*PgVectorStore, error) {
 	}
 
 	// 连接到测试数据库
-	store, err := NewPgVectorStore(ctx, testDBHost, testDBPort, testDBUser, testDBPassword, testDBName)
+	store, err := NewPgVectorStore(ctx, testDBHost, testDBPort, testDBUser, testDBPassword, testDBName, "disable")
 	if err != nil {
 		return nil, fmt.Errorf("创建向量存储失败: %w", err)
 	}

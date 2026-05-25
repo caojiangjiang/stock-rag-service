@@ -1,3 +1,5 @@
+//go:build ignore
+
 package main
 
 import (
@@ -59,7 +61,7 @@ func main() {
 	// 构建连接字符串（添加 tenant identifier）
 	// project ID: uvbojcqbfobmqrjturza
 	connStr := fmt.Sprintf(
-		"postgres://%s:%s@%s:%s/%s?sslmode=require&sni_hostname=%s&options=-c%20external_id=uvbojcqbfobmqrjturza",
+		"postgres://%s:%s@%s:%s/%s?sslmode=require&sni_hostname=%s&options=-c%%20external_id=uvbojcqbfobmqrjturza",
 		user, password, host, port, database, host,
 	)
 

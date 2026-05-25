@@ -24,7 +24,7 @@ func (f *fakeChatService) Chat(ctx context.Context, req *agent.ChatRequest) (*ag
 }
 
 func TestChatHandlerRejectsUnknownFields(t *testing.T) {
-	handler := NewChatHandler(&fakeChatService{}, nil)
+	handler := NewChatHandler(&fakeChatService{})
 	req := httptest.NewRequest(http.MethodPost, "/api/chat", bytes.NewBufferString(`{"message":"你好","unexpected":true}`))
 	resp := httptest.NewRecorder()
 
@@ -36,7 +36,7 @@ func TestChatHandlerRejectsUnknownFields(t *testing.T) {
 }
 
 func TestChatHandlerMapsQueueFullToTooManyRequests(t *testing.T) {
-	handler := NewChatHandler(&fakeChatService{err: concurrency.ErrQueueFull}, nil)
+	handler := NewChatHandler(&fakeChatService{err: concurrency.ErrQueueFull})
 	body := bytes.NewBufferString(`{"message":"你好"}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/chat", body)
 	resp := httptest.NewRecorder()
@@ -55,7 +55,7 @@ func TestChatHandlerReturnsChatResponse(t *testing.T) {
 		Content:        "你好，我可以帮助你分析股票。",
 		Mode:           "chat",
 	}}
-	handler := NewChatHandler(service, nil)
+	handler := NewChatHandler(service)
 	body := bytes.NewBufferString(`{"message":"你好","mode":"chat"}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/chat", body)
 	resp := httptest.NewRecorder()
