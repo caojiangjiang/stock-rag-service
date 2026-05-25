@@ -3,8 +3,10 @@ package observability
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"log"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -38,7 +40,29 @@ type Logger struct {
 var (
 	defaultLogger *Logger
 	defaultOnce   sync.Once
+	logOutput     io.Writer = os.Stdout
+	logOutputOnce sync.Once
 )
+
+func initLogOutput() {
+	logOutputOnce.Do(func() {
+		path := os.Getenv("LOG_FILE")
+		if path == "" {
+			return
+		}
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			log.Printf("LOG_FILE: mkdir failed (%s): %v", path, err)
+			return
+		}
+		f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+		if err != nil {
+			log.Printf("LOG_FILE: open failed (%s): %v", path, err)
+			return
+		}
+		logOutput = io.MultiWriter(os.Stdout, f)
+		log.Printf("LOG_FILE: writing logs to %s (also stdout)", path)
+	})
+}
 
 // L 返回全局默认 logger（service 取自 OTEL_SERVICE_NAME 或 fallback "stock_rag"）
 func L() *Logger {
@@ -54,9 +78,10 @@ func L() *Logger {
 
 // NewLogger 创建结构化日志记录器
 func NewLogger(service string) *Logger {
+	initLogOutput()
 	return &Logger{
 		service: service,
-		logger:  log.New(os.Stdout, "", 0),
+		logger:  log.New(logOutput, "", 0),
 	}
 }
 

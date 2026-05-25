@@ -101,6 +101,15 @@ func loadDotEnv() {
 	if err := godotenv.Load(); err != nil {
 		log.Printf("Warning: Failed to load .env file: %v", err)
 	}
+	initObservabilityLogging()
+}
+
+// initObservabilityLogging 默认把结构化 JSON 日志写入 logs/app.log，供 Promtail → Loki 与 Tempo trace 关联。
+func initObservabilityLogging() {
+	if os.Getenv("LOG_FILE") == "" {
+		_ = os.Setenv("LOG_FILE", "logs/app.log")
+	}
+	observability.L().Info("structured logging ready", "log_file", os.Getenv("LOG_FILE"))
 }
 
 func initTracing() {

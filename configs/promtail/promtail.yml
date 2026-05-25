@@ -1,0 +1,45 @@
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+  # 本机 go run 须在 .env 设置 LOG_FILE=logs/app.log（结构化 JSON，含 trace_id）
+  - job_name: stock_rag
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: stock_rag
+          service: stock_rag
+          __path__: /var/log/stock_rag/*.log
+    pipeline_stages:
+      # 结构化 JSON 日志（observability.L().InfoCtx）
+      - match:
+          selector: '{job="stock_rag"} |~ "^\\{"'
+          stages:
+            - json:
+                expressions:
+                  trace_id: trace_id
+                  span_id: span_id
+                  level: level
+                  message: message
+                  service: service
+            - labels:
+                trace_id:
+                span_id:
+                level:
+      # 行内包含 32 位 OTel trace_id 时兜底打标签（便于 LogQL 按标签查）
+      - regex:
+          expression: '"trace_id":"(?P<trace_id>[0-9a-f]{32})"'
+      - labels:
+          trace_id:
+      - regex:
+          expression: '"span_id":"(?P<span_id>[0-9a-f]{16})"'
+      - labels:
+          span_id:

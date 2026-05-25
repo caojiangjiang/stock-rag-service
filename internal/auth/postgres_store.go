@@ -15,6 +15,15 @@ func NewPostgresUserStore(db *pgxpool.Pool) *PostgresUserStore {
 	return &PostgresUserStore{db: db}
 }
 
+// 库表经 fix_timestamps.sql 后时间列为 Unix 秒（BIGINT），与 time.Time 互转。
+func timeToUnix(t time.Time) int64 {
+	return t.Unix()
+}
+
+func unixToTime(sec int64) time.Time {
+	return time.Unix(sec, 0).UTC()
+}
+
 func (s *PostgresUserStore) InitTable() error {
 	query := `
 	CREATE TABLE IF NOT EXISTS users (
@@ -23,8 +32,8 @@ func (s *PostgresUserStore) InitTable() error {
 		email TEXT UNIQUE NOT NULL,
 		password TEXT NOT NULL,
 		role TEXT NOT NULL DEFAULT 'user',
-		created_at TIMESTAMP NOT NULL,
-		updated_at TIMESTAMP NOT NULL
+		created_at BIGINT NOT NULL,
+		updated_at BIGINT NOT NULL
 	);
 	ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'user';
 	
@@ -37,6 +46,7 @@ func (s *PostgresUserStore) InitTable() error {
 
 func (s *PostgresUserStore) GetByID(userID string) (*User, bool) {
 	var user User
+	var createdAt, updatedAt int64
 	err := s.db.QueryRow(context.Background(), `
 		SELECT id, username, email, password, COALESCE(role, 'user'), created_at, updated_at
 		FROM users WHERE id = $1`, userID).Scan(
@@ -45,17 +55,20 @@ func (s *PostgresUserStore) GetByID(userID string) (*User, bool) {
 		&user.Email,
 		&user.Password,
 		&user.Role,
-		&user.CreatedAt,
-		&user.UpdatedAt,
+		&createdAt,
+		&updatedAt,
 	)
 	if err != nil {
 		return nil, false
 	}
+	user.CreatedAt = unixToTime(createdAt)
+	user.UpdatedAt = unixToTime(updatedAt)
 	return &user, true
 }
 
 func (s *PostgresUserStore) GetByUsername(username string) (*User, bool) {
 	var user User
+	var createdAt, updatedAt int64
 	err := s.db.QueryRow(context.Background(), `
 		SELECT id, username, email, password, COALESCE(role, 'user'), created_at, updated_at
 		FROM users WHERE username = $1`, username).Scan(
@@ -64,17 +77,20 @@ func (s *PostgresUserStore) GetByUsername(username string) (*User, bool) {
 		&user.Email,
 		&user.Password,
 		&user.Role,
-		&user.CreatedAt,
-		&user.UpdatedAt,
+		&createdAt,
+		&updatedAt,
 	)
 	if err != nil {
 		return nil, false
 	}
+	user.CreatedAt = unixToTime(createdAt)
+	user.UpdatedAt = unixToTime(updatedAt)
 	return &user, true
 }
 
 func (s *PostgresUserStore) GetByEmail(email string) (*User, bool) {
 	var user User
+	var createdAt, updatedAt int64
 	err := s.db.QueryRow(context.Background(), `
 		SELECT id, username, email, password, COALESCE(role, 'user'), created_at, updated_at
 		FROM users WHERE email = $1`, email).Scan(
@@ -83,12 +99,14 @@ func (s *PostgresUserStore) GetByEmail(email string) (*User, bool) {
 		&user.Email,
 		&user.Password,
 		&user.Role,
-		&user.CreatedAt,
-		&user.UpdatedAt,
+		&createdAt,
+		&updatedAt,
 	)
 	if err != nil {
 		return nil, false
 	}
+	user.CreatedAt = unixToTime(createdAt)
+	user.UpdatedAt = unixToTime(updatedAt)
 	return &user, true
 }
 
@@ -111,8 +129,8 @@ func (s *PostgresUserStore) Set(user *User) error {
 		user.Email,
 		user.Password,
 		role,
-		user.CreatedAt,
-		user.UpdatedAt,
+		timeToUnix(user.CreatedAt),
+		timeToUnix(user.UpdatedAt),
 	)
 	return err
 }
@@ -136,7 +154,7 @@ func (s *PostgresSessionStore) InitTable() error {
 		id TEXT PRIMARY KEY,
 		user_id TEXT NOT NULL,
 		last_active_at TIMESTAMP NOT NULL,
-		created_at TIMESTAMP NOT NULL,
+		created_at BIGINT NOT NULL,
 		FOREIGN KEY (user_id) REFERENCES users(id)
 	);
 	
@@ -148,17 +166,19 @@ func (s *PostgresSessionStore) InitTable() error {
 
 func (s *PostgresSessionStore) Get(sessionID string) (*Session, bool) {
 	var session Session
+	var createdAt int64
 	err := s.db.QueryRow(context.Background(), `
 		SELECT id, user_id, last_active_at, created_at
 		FROM sessions WHERE id = $1`, sessionID).Scan(
 		&session.ID,
 		&session.UserID,
 		&session.LastActiveAt,
-		&session.CreatedAt,
+		&createdAt,
 	)
 	if err != nil {
 		return nil, false
 	}
+	session.CreatedAt = unixToTime(createdAt)
 	return &session, true
 }
 
@@ -173,7 +193,7 @@ func (s *PostgresSessionStore) Set(sessionID string, session *Session) {
 		sessionID,
 		session.UserID,
 		session.LastActiveAt,
-		session.CreatedAt,
+		timeToUnix(session.CreatedAt),
 	)
 }
 
@@ -190,12 +210,14 @@ func (s *PostgresSessionStore) ListByUserID(userID string) []*Session {
 	var sessions []*Session
 	for rows.Next() {
 		var session Session
+		var createdAt int64
 		if err := rows.Scan(
 			&session.ID,
 			&session.UserID,
 			&session.LastActiveAt,
-			&session.CreatedAt,
+			&createdAt,
 		); err == nil {
+			session.CreatedAt = unixToTime(createdAt)
 			sessions = append(sessions, &session)
 		}
 	}
@@ -210,12 +232,14 @@ func (s *PostgresSessionStore) List() []*Session {
 	var sessions []*Session
 	for rows.Next() {
 		var session Session
+		var createdAt int64
 		if err := rows.Scan(
 			&session.ID,
 			&session.UserID,
 			&session.LastActiveAt,
-			&session.CreatedAt,
+			&createdAt,
 		); err == nil {
+			session.CreatedAt = unixToTime(createdAt)
 			sessions = append(sessions, &session)
 		}
 	}
