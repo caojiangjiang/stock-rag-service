@@ -134,9 +134,7 @@ func NewLLMRouterClassifier(llmClient LLMClient) *LLMRouterClassifier {
 
 可用模式：
 1. chat - 闲聊、系统说明、不依赖资料检索的问题
-2. rag - 需要基于文档/公告/研报/知识库回答，用户问事实、结论、出处
-3. analysis - 基于检索结果做结构化分析，强调总结、比较、抽取、归纳
-4. agent - 多步骤任务、多工具调用、需要规划执行
+2. agent - 事实性问题、需要文档检索、分析、多步骤任务、工具调用
 
 请按以下JSON格式输出：
 {
@@ -150,8 +148,7 @@ func NewLLMRouterClassifier(llmClient LLMClient) *LLMRouterClassifier {
 }
 
 约束条件：
-- 如果需要文档依据，优先rag或analysis
-- 如果需要多步骤工具，才选agent
+- 如果需要文档依据、分析、或多步骤处理，选agent
 - 如果仅是开放交流，不需要外部资料，选chat
 
 对话上下文：

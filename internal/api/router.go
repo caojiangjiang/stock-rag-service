@@ -2,6 +2,8 @@ package api
 
 import (
 	"net/http"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -48,8 +50,21 @@ func NewRouter(querySvc QueryService, taskAgentService *service.TaskAgentService
 
 	mux.HandleFunc("/documents/import", requireAdmin(DocumentsImportHandler(querySvc)))
 	mux.HandleFunc("/documents", DocumentsListHandler(querySvc))
-	mux.HandleFunc("/rag/query", longRunning(QueryHandler(querySvc)))
-	mux.HandleFunc("/rag/query/stream", longRunning(QueryStreamHandler(querySvc)))
+
+	// 可选的 RAG API（用于内部测试和向后兼容）
+	enableRAGAPI := strings.EqualFold(strings.TrimSpace(os.Getenv("ENABLE_RAG_API")), "true")
+	if enableRAGAPI {
+		mux.HandleFunc("/rag/query", longRunning(QueryHandler(querySvc)))
+		mux.HandleFunc("/rag/query/stream", longRunning(QueryStreamHandler(querySvc)))
+	} else {
+		// 默认返回 404，提示使用 /api/chat
+		mux.HandleFunc("/rag/query", func(w http.ResponseWriter, r *http.Request) {
+			http.NotFound(w, r)
+		})
+		mux.HandleFunc("/rag/query/stream", func(w http.ResponseWriter, r *http.Request) {
+			http.NotFound(w, r)
+		})
+	}
 
 	agentHandler := NewAgentHandler(taskAgentService, jwtSecret)
 	mux.HandleFunc("/api/agent/execute", requireAuth(agentHandler.ExecuteTask))

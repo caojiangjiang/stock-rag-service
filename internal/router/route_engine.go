@@ -2,8 +2,10 @@ package router
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"go.opentelemetry.io/otel/attribute"
 
@@ -17,10 +19,20 @@ type RouteMode string
 
 const (
 	ModeChat     RouteMode = "chat"
-	ModeRAG      RouteMode = "rag"
-	ModeAnalysis RouteMode = "analysis"
+	ModeRAG      RouteMode = "rag"      // 已弃用，映射为 agent
+	ModeAnalysis RouteMode = "analysis" // 已弃用，映射为 agent
 	ModeAgent    RouteMode = "agent"
 )
+
+// NormalizeMode 规范化模式，将旧模式映射为新模式
+func NormalizeMode(mode RouteMode) RouteMode {
+	switch mode {
+	case ModeRAG, ModeAnalysis:
+		return ModeAgent
+	default:
+		return mode
+	}
+}
 
 type RouteConfig struct {
 	HighConfidenceThreshold   float64
@@ -143,74 +155,41 @@ func (e *RouteEngine) Route(ctx context.Context, input *RouteInput) (result *Rou
 	}()
 	startTime := time.Now()
 
-	var decision RouteDecision
-	decision.ID = uuid.New().String()
-	decision.ConversationID = input.ConversationID
-	decision.MessageID = input.MessageID
-	decision.CreatedAt = time.Now()
+	decision := RouteDecision{
+		ID:             uuid.New().String(),
+		ConversationID: input.ConversationID,
+		MessageID:      input.MessageID,
+		CreatedAt:      time.Now(),
+		Selected:       true,
+	}
 
-	// 第一步：显式模式优先
+	// 第一步：显式模式优先（兼容旧模式）
 	if input.ExplicitMode != "" {
 		decision.ClassifierType = "explicit"
 		decision.PredictedMode = input.ExplicitMode
-		decision.SelectedMode = input.ExplicitMode
+		decision.SelectedMode = NormalizeMode(input.ExplicitMode)
 		decision.Confidence = 1.0
 		decision.Reason = "显式指定模式"
-		decision.Selected = true
-		decision.LatencyMs = int(time.Since(startTime).Milliseconds())
-
-		if e.store != nil {
-			e.store.RecordDecision(ctx, &decision)
-		}
-		return &decision, nil
+		return e.finishRoute(ctx, &decision, startTime)
 	}
 
-	// 第二步：会话粘性继承
-	if shouldInheritMode(input) {
-		decision.ClassifierType = "stickiness"
-		decision.PredictedMode = input.LastRouteMode
-		decision.SelectedMode = input.LastRouteMode
-		decision.Confidence = 0.9
-		decision.Reason = "会话粘性继承模式: " + string(input.LastRouteMode)
-		decision.Selected = true
-		decision.LatencyMs = int(time.Since(startTime).Milliseconds())
-
-		if e.store != nil {
-			e.store.RecordDecision(ctx, &decision)
-		}
-		return &decision, nil
-	}
-
-	// 第三步：硬规则判断
+	// 第二步：硬规则（意图明确时优先于会话粘性）
 	ruleMatches, err := e.ruleMatcher.Match(input)
 	if err != nil {
 		return nil, err
 	}
-
 	if len(ruleMatches) > 0 {
-		bestMatch := ruleMatches[0]
-		for _, match := range ruleMatches[1:] {
-			if match.Confidence > bestMatch.Confidence {
-				bestMatch = match
-			}
-		}
-
+		bestMatch := bestRuleMatch(ruleMatches)
 		decision.ClassifierType = "rule"
 		decision.ClassifierVersion = bestMatch.RuleName
 		decision.PredictedMode = bestMatch.Mode
-		decision.SelectedMode = bestMatch.Mode
+		decision.SelectedMode = NormalizeMode(bestMatch.Mode)
 		decision.Confidence = bestMatch.Confidence
 		decision.Reason = bestMatch.Reason
-		decision.Selected = true
-		decision.LatencyMs = int(time.Since(startTime).Milliseconds())
-
-		if e.store != nil {
-			e.store.RecordDecision(ctx, &decision)
-		}
-		return &decision, nil
+		return e.finishRoute(ctx, &decision, startTime)
 	}
 
-	// 第四步：LLM分类
+	// 第三步：LLM 分类 + 置信度/追问粘性
 	if e.llmClassifier != nil {
 		classResult, err := e.llmClassifier.Classify(ctx, input)
 		if err != nil {
@@ -221,81 +200,191 @@ func (e *RouteEngine) Route(ctx context.Context, input *RouteInput) (result *Rou
 		decision.PredictedMode = classResult.Mode
 		decision.Confidence = classResult.Confidence
 		decision.Reason = classResult.Reason
-		decision.Candidates = classResult.Candidates
-
-		// 第五步：根据置信度做分发
-		if classResult.Confidence >= e.config.HighConfidenceThreshold {
-			decision.SelectedMode = classResult.Mode
-			decision.Selected = true
-		} else if classResult.Confidence >= e.config.MediumConfidenceThreshold {
-			decision.SelectedMode = e.config.DefaultMode
-			decision.Selected = true
-			decision.Reason += " (中置信度，降级到默认模式)"
-		} else {
-			decision.SelectedMode = e.config.DefaultMode
-			decision.Selected = true
-			decision.Reason += " (低置信度，使用安全模式)"
-		}
-	} else {
-		// 无LLM分类器，使用默认模式
-		decision.ClassifierType = "default"
-		decision.PredictedMode = e.config.DefaultMode
-		decision.SelectedMode = e.config.DefaultMode
-		decision.Confidence = 0.5
-		decision.Reason = "使用默认模式"
-		decision.Selected = true
+		decision.Candidates = normalizeCandidates(classResult.Candidates)
+		e.applyConfidenceAndStickiness(&decision, input)
+		return e.finishRoute(ctx, &decision, startTime)
 	}
 
-	decision.LatencyMs = int(time.Since(startTime).Milliseconds())
-
-	if e.store != nil {
-		e.store.RecordDecision(ctx, &decision)
+	// 无 LLM：仅在明确追问时继承上一轮，否则默认模式
+	if stickiness := stickinessDecision(input); stickiness != nil {
+		decision.ClassifierType = stickiness.classifierType
+		decision.PredictedMode = stickiness.predicted
+		decision.SelectedMode = stickiness.selected
+		decision.Confidence = stickiness.confidence
+		decision.Reason = stickiness.reason
+		decision.UserFollowUp = true
+		return e.finishRoute(ctx, &decision, startTime)
 	}
 
-	return &decision, nil
+	decision.ClassifierType = "default"
+	decision.PredictedMode = e.config.DefaultMode
+	decision.SelectedMode = NormalizeMode(e.config.DefaultMode)
+	decision.Confidence = 0.5
+	decision.Reason = "使用默认模式"
+	return e.finishRoute(ctx, &decision, startTime)
 }
 
-func shouldInheritMode(input *RouteInput) bool {
+func (e *RouteEngine) applyConfidenceAndStickiness(decision *RouteDecision, input *RouteInput) {
+	predicted := NormalizeMode(decision.PredictedMode)
+	decision.SelectedMode = predicted
+
+	if decision.Confidence >= e.config.HighConfidenceThreshold {
+		return
+	}
+
+	if stickiness := stickinessDecision(input); stickiness != nil {
+		decision.ClassifierType = "llm+stickiness"
+		decision.SelectedMode = stickiness.selected
+		decision.Confidence = stickiness.confidence
+		decision.Reason = fmt.Sprintf("%s (%s)", decision.Reason, stickiness.reason)
+		decision.UserFollowUp = true
+		return
+	}
+
+	if decision.Confidence >= e.config.MediumConfidenceThreshold {
+		// 中置信度且无追问信号：信任分类器预测，避免一律降级到 chat
+		return
+	}
+
+	decision.SelectedMode = NormalizeMode(e.config.DefaultMode)
+	decision.TriggeredFallback = true
+	decision.Reason += " (低置信度且无追问上下文，使用默认模式)"
+}
+
+type stickinessResult struct {
+	classifierType string
+	predicted      RouteMode
+	selected       RouteMode
+	confidence     float64
+	reason         string
+}
+
+func stickinessDecision(input *RouteInput) *stickinessResult {
+	if !shouldApplyStickiness(input) {
+		return nil
+	}
+	inherited := NormalizeMode(input.LastRouteMode)
+	return &stickinessResult{
+		classifierType: "stickiness",
+		predicted:      input.LastRouteMode,
+		selected:       inherited,
+		confidence:     0.78,
+		reason:         "追问继承会话模式: " + string(inherited),
+	}
+}
+
+func shouldApplyStickiness(input *RouteInput) bool {
 	if input.LastRouteMode == "" {
 		return false
 	}
-
-	msg := input.CurrentMessage
-
-	// 通用能力问题 - 不继承模式（应该走 chat 模式）
-	capabilityQuestions := []string{
-		"你能帮我做什么",
-		"你会什么",
-		"你能做什么",
-		"你可以做什么",
-		"你有什么功能",
-		"你的功能",
-		"介绍一下",
-		"你是谁",
+	msg := strings.TrimSpace(input.CurrentMessage)
+	if msg == "" {
+		return false
 	}
-	for _, q := range capabilityQuestions {
+	if isCapabilityQuestion(msg) || hasModeSwitchIntent(msg) {
+		return false
+	}
+	return isFollowUpMessage(input, msg)
+}
+
+func isCapabilityQuestion(msg string) bool {
+	questions := []string{
+		"你能帮我做什么", "你会什么", "你能做什么", "你可以做什么",
+		"你有什么功能", "你的功能", "介绍一下你自己", "介绍一下你",
+		"你是谁", "怎么使用", "你擅长什么", "我能问你什么",
+	}
+	for _, q := range questions {
 		if strings.Contains(msg, q) {
-			return false
+			return true
 		}
 	}
+	return false
+}
 
-	// 包含指代词
-	pronouns := []string{"那", "这个", "它", "上一条", "继续", "然后", "还有", "再"}
-	for _, pronoun := range pronouns {
-		if strings.Contains(msg, pronoun) {
+// hasModeSwitchIntent 检测用户是否在发起新的任务类型（应走规则/LLM，而非继承）
+func hasModeSwitchIntent(msg string) bool {
+	text := normalizeText(msg)
+	for _, kw := range modeSwitchKeywords {
+		if strings.Contains(text, normalizeText(kw)) {
+			return true
+		}
+	}
+	return false
+}
+
+var modeSwitchKeywords = []string{
+	"研报", "公告", "财报", "文档", "原文", "引用", "根据资料", "根据报告",
+	"分析", "提取指标", "总结观点", "估值", "同比", "环比", "财务指标", "拆解", "趋势",
+	"对比", "分步骤", "综合", "综合分析", "多维度", "多角度", "交叉验证",
+	"帮我执行", "查多个", "连续步骤", "工具调用", "规划",
+	"你是谁", "你能做什么", "你好", "谢谢", "闲聊",
+}
+
+func isFollowUpMessage(input *RouteInput, msg string) bool {
+	if len(input.RecentMessages) == 0 && strings.TrimSpace(input.Summary) == "" {
+		return false
+	}
+
+	continuationPhrases := []string{
+		"上一条", "接着说", "继续问", "继续", "还有呢", "然后呢",
+		"那这个", "那个呢", "这个呢", "它呢", "同上", "刚才说的",
+		"前面说的", "前文", "上一轮", "接着", "再说说",
+	}
+	for _, phrase := range continuationPhrases {
+		if strings.Contains(msg, phrase) {
 			return true
 		}
 	}
 
-	// 包含疑问词但没有明确主题
-	shortQuestions := []string{"呢？", "吗？", "如何？", "怎么样？", "什么？"}
-	for _, q := range shortQuestions {
-		if strings.Contains(msg, q) && len(msg) < 30 {
+	runeLen := utf8.RuneCountInString(msg)
+	if runeLen <= 32 {
+		if strings.HasSuffix(msg, "呢") || strings.HasSuffix(msg, "吗") ||
+			strings.Contains(msg, "？") || strings.Contains(msg, "?") {
 			return true
+		}
+	}
+
+	if runeLen <= 40 {
+		ellipsisHints := []string{"呢", "怎么样", "如何", "多少", "为什么", "什么意思"}
+		for _, hint := range ellipsisHints {
+			if strings.Contains(msg, hint) {
+				return true
+			}
 		}
 	}
 
 	return false
+}
+
+func bestRuleMatch(matches []RuleMatch) RuleMatch {
+	best := matches[0]
+	for _, match := range matches[1:] {
+		if match.Confidence > best.Confidence {
+			best = match
+		}
+	}
+	return best
+}
+
+func normalizeCandidates(candidates []CandidateMode) []CandidateMode {
+	out := make([]CandidateMode, len(candidates))
+	for i, c := range candidates {
+		out[i] = CandidateMode{
+			Mode:       NormalizeMode(c.Mode),
+			Confidence: c.Confidence,
+		}
+	}
+	return out
+}
+
+func (e *RouteEngine) finishRoute(ctx context.Context, decision *RouteDecision, startTime time.Time) (*RouteDecision, error) {
+	decision.LatencyMs = int(time.Since(startTime).Milliseconds())
+	if e.store != nil {
+		if err := e.store.RecordDecision(ctx, decision); err != nil {
+			return decision, err
+		}
+	}
+	return decision, nil
 }
 
 type PostgresRouteStore struct {

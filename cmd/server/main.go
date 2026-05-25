@@ -77,8 +77,8 @@ func main() {
 	var rateLimiter limiter.RateLimiter
 	if redisClient != nil {
 		rateLimiter = limiter.NewRedisTokenBucket(redisClient, limiter.TokenBucketConfig{
-			Capacity:   100,           // 桶容量：100 个令牌
-			RefillRate: 10,            // 每秒补充 10 个令牌
+			Capacity:   100, // 桶容量：100 个令牌
+			RefillRate: 10,  // 每秒补充 10 个令牌
 		}, "httpratelimit:")
 		log.Println("Rate limiter initialized (Redis distributed)")
 	} else {
@@ -301,11 +301,11 @@ func initAuthService(pgConversationStore *repository.PostgresConversationStore, 
 		log.Printf("Warning: Using default JWT secret. Set JWT_SECRET environment variable for production.")
 	}
 	cfg := auth.AuthServiceConfig{
-		UserStore:     userStore,
-		SessionStore:  sessionStore,
-		JWTSecret:     jwtSecret,
-		Blacklist:     auth.NewTokenBlacklist(redisClient),
-		RefreshStore:  auth.NewRefreshStore(redisClient),
+		UserStore:    userStore,
+		SessionStore: sessionStore,
+		JWTSecret:    jwtSecret,
+		Blacklist:    auth.NewTokenBlacklist(redisClient),
+		RefreshStore: auth.NewRefreshStore(redisClient),
 	}
 	if redisClient != nil {
 		log.Println("Auth token blacklist and refresh store using Redis")
@@ -322,10 +322,7 @@ func initChatService(querySvc *service.QueryService, conversationStore repositor
 		router.NewHardRuleMatcher(),
 		nil,
 	)
-	retriever := agent.NewQueryServiceRetriever(querySvc)
 	chatExecutor := agent.NewChatExecutor(llm.GetLLMClient())
-	ragExecutor := agent.NewRAGExecutor(llm.GetLLMClient(), retriever)
-	analysisExecutor := agent.NewAnalysisExecutor(llm.GetLLMClient(), retriever)
 
 	// ModeAgent 入口：默认 Supervisor；设置 AGENT_EXECUTOR=react 启用 ReAct 循环
 	modeAgentExecutor := selectModeAgentExecutor(taskAgentService, toolRegistry)
@@ -335,7 +332,7 @@ func initChatService(querySvc *service.QueryService, conversationStore repositor
 		log.Println("ModeAgent using Supervisor coordinator executor")
 	}
 
-	agentExecutor := agent.NewAgentExecutor(chatExecutor, ragExecutor, analysisExecutor, modeAgentExecutor)
+	agentExecutor := agent.NewAgentExecutor(chatExecutor, modeAgentExecutor)
 
 	// 初始化精确缓存
 	redisHost := strings.TrimSpace(os.Getenv("REDIS_HOST"))
