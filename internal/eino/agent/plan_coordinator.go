@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"stock_rag/internal/eino/adapter"
 
@@ -38,30 +39,52 @@ func (c *PlanCoordinator) Execute(ctx context.Context, taskState *TaskState) (st
 		return "没有配置任何 Agent", nil
 	}
 
+	rt := RuntimeFromContext(ctx)
+	if rt == nil {
+		rt = NewCoordinatorRuntime(c.Name(), nil)
+	}
+	ctx, endSpan := StartCoordinatorSpan(ctx, c.Name(), taskState)
+	defer endSpan()
+
+	coordinatorStart := time.Now()
+	defer func() {
+		status := "success"
+		if taskState.Status == TaskStatusFailed {
+			status = "error"
+		}
+		RecordCoordinatorResult(c.Name(), status, time.Since(coordinatorStart).Seconds())
+	}()
+
+	runCtx, cancel := rt.DeriveContext(ctx)
+	defer cancel()
+
 	taskState.UpdateStatus(TaskStatusRunning)
 
-	// 使用 EinoModelAdapter 包装 llm.GetLLMClient()
-	// 调用链路: Eino ADK -> EinoModelAdapter -> llm.GetLLMClient() -> provider
 	modelAdapter := adapter.NewEinoModelAdapter()
 
-	planner, err := c.createPlanner(ctx, modelAdapter)
+	planner, err := c.createPlanner(runCtx, modelAdapter)
 	if err != nil {
 		taskState.UpdateStatus(TaskStatusFailed)
 		taskState.AddError(fmt.Sprintf("创建 Planner 失败: %v", err))
 		return "", err
 	}
 
-	executor, err := c.createExecutor(ctx, modelAdapter, profiles)
+	executor, err := c.createExecutor(runCtx, modelAdapter, profiles)
 	if err != nil {
 		taskState.UpdateStatus(TaskStatusFailed)
 		taskState.AddError(fmt.Sprintf("创建 Executor 失败: %v", err))
 		return "", err
 	}
 
-	planExecuteAgent, err := planexecute.New(ctx, &planexecute.Config{
+	maxIterations := 5
+	if rt.Strategy.MaxSteps > 0 && rt.Strategy.MaxSteps < maxIterations {
+		maxIterations = rt.Strategy.MaxSteps
+	}
+
+	planExecuteAgent, err := planexecute.New(runCtx, &planexecute.Config{
 		Planner:       planner,
 		Executor:      executor,
-		MaxIterations: 5,
+		MaxIterations: maxIterations,
 	})
 	if err != nil {
 		taskState.UpdateStatus(TaskStatusFailed)
@@ -69,35 +92,27 @@ func (c *PlanCoordinator) Execute(ctx context.Context, taskState *TaskState) (st
 		return "", err
 	}
 
+	userContent := taskState.UserMessage
+	if taskState.StockCode != "" {
+		userContent += fmt.Sprintf("\n\n股票代码: %s", taskState.StockCode)
+	}
+
 	input := &adk.AgentInput{
 		Messages: []adk.Message{
 			{
 				Role:    schema.User,
-				Content: taskState.UserMessage,
+				Content: userContent,
 			},
 		},
 		EnableStreaming: false,
 	}
 
-	iterator := planExecuteAgent.Run(ctx, input)
-
-	var finalResult string
-	for {
-		event, ok := iterator.Next()
-		if !ok {
-			break
-		}
-
-		if event.Err != nil {
-			taskState.UpdateStatus(TaskStatusFailed)
-			taskState.AddError(fmt.Sprintf("PlanExecute 执行错误: %v", event.Err))
-			return "", event.Err
-		}
-
-		if event.Output != nil && event.Output.MessageOutput != nil {
-			msg, _ := event.Output.MessageOutput.GetMessage()
-			finalResult += msg.Content
-		}
+	iterator := planExecuteAgent.Run(runCtx, input)
+	finalResult, err := rt.ProcessADKIterator(runCtx, taskState, iterator)
+	if err != nil {
+		taskState.UpdateStatus(TaskStatusFailed)
+		taskState.AddError(fmt.Sprintf("PlanExecute 执行错误: %v", err))
+		return finalResult, err
 	}
 
 	taskState.UpdateStatus(TaskStatusCompleted)

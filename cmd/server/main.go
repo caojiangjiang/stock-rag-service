@@ -65,10 +65,11 @@ func main() {
 
 	querySvc := initQueryService(ctx, store, embedder, redisClient)
 	conversationStore, pgConversationStore := initConversationStore(config.Database.Postgres)
-	taskAgentService := initTaskAgentService(conversationStore, querySvc)
-	authService, jwtSecret := initAuthService(pgConversationStore)
+	toolRegistry := initToolRegistry(querySvc)
+	taskAgentService := initTaskAgentService(toolRegistry, conversationStore)
+	authService, jwtSecret := initAuthService(pgConversationStore, redisClient)
 
-	chatService := initChatService(querySvc, conversationStore, pgConversationStore, taskAgentService, store, embedder, redisClient)
+	chatService := initChatService(querySvc, conversationStore, pgConversationStore, taskAgentService, toolRegistry, store, embedder, redisClient)
 	mux := api.NewRouter(querySvc, taskAgentService, authService, jwtSecret, chatService, conversationStore, pgConversationStore.DB(), redisClient)
 
 	// 添加限流中间件（如果 Redis 可用，使用分布式限流；否则使用内存限流）
@@ -215,16 +216,20 @@ func initConversationStore(postgresConfig pkgctx.PostgresConfig) (repository.Uni
 	return pgConversationStore, pgConversationStore
 }
 
-func initTaskAgentService(conversationStore repository.UnifiedConversationStore, querySvc *service.QueryService) *service.TaskAgentService {
+func initToolRegistry(querySvc *service.QueryService) *einotools.ToolRegistry {
+	toolRegistry := einotools.NewToolRegistry()
+	if err := toolRegistry.RegisterStandardTools(querySvc); err != nil {
+		log.Fatalf("Failed to register standard tools: %v", err)
+	}
+	return toolRegistry
+}
+
+func initTaskAgentService(toolRegistry *einotools.ToolRegistry, conversationStore repository.UnifiedConversationStore) *service.TaskAgentService {
 	// 使用新的 Coordinator 体系
 	// 1. 创建 ProfileRegistry 并注册默认 profiles
 	profileRegistry := einoagent.NewProfileRegistry()
 
-	// 2. 创建 ToolRegistry 并注册工具
-	toolRegistry := einotools.NewToolRegistry()
-
-	// 注册标准工具
-	toolRegistry.RegisterStandardTools(querySvc)
+	// 2. 使用共享 ToolRegistry
 
 	// 3. 创建 AgentBuilder
 	agentBuilder := einoagent.NewAgentBuilder(toolRegistry)
@@ -232,11 +237,13 @@ func initTaskAgentService(conversationStore repository.UnifiedConversationStore,
 	// 4. 创建 CoordinatorFactory
 	coordinatorFactory := einoagent.NewCoordinatorFactory(profileRegistry, agentBuilder, toolRegistry)
 
-	// 5. 创建 SupervisorCoordinator（使用 Coordinator 体系）
-	coordinator, err := coordinatorFactory.Create(einoagent.CoordinatorTypeSupervisor)
+	// 5. 创建 Coordinator（默认 supervisor，可通过 COORDINATOR_TYPE 切换）
+	coordinatorType := resolveCoordinatorType()
+	coordinator, err := coordinatorFactory.Create(coordinatorType)
 	if err != nil {
-		log.Fatalf("Failed to create SupervisorCoordinator: %v", err)
+		log.Fatalf("Failed to create coordinator %s: %v", coordinatorType, err)
 	}
+	log.Printf("Task agent coordinator: %s", coordinatorType)
 
 	// 6. 设置子 Agent profiles
 	coordinator.SetAgentProfiles([]*einoagent.AgentProfile{
@@ -245,13 +252,13 @@ func initTaskAgentService(conversationStore repository.UnifiedConversationStore,
 		einoagent.AnalystWriterProfile,
 	})
 
-	// 7. 使用新的 CoordinatorSupervisorAdapter
+	// 7. 使用 CoordinatorSupervisorAdapter（含超时与协调级重试）
 	supervisorAdapter := einoagent.NewCoordinatorSupervisorAdapter(coordinator)
 
 	return service.NewTaskAgentService(supervisorAdapter, conversationStore)
 }
 
-func initAuthService(pgConversationStore *repository.PostgresConversationStore) (auth.AuthService, string) {
+func initAuthService(pgConversationStore *repository.PostgresConversationStore, redisClient *redis.Client) (auth.AuthService, string) {
 	var userStore auth.UserStore
 	var sessionStore auth.SessionStore
 	if pgConversationStore != nil {
@@ -283,10 +290,22 @@ func initAuthService(pgConversationStore *repository.PostgresConversationStore) 
 		jwtSecret = "default-secret-key-change-in-production"
 		log.Printf("Warning: Using default JWT secret. Set JWT_SECRET environment variable for production.")
 	}
-	return auth.NewAuthServiceImpl(userStore, sessionStore, jwtSecret), jwtSecret
+	cfg := auth.AuthServiceConfig{
+		UserStore:     userStore,
+		SessionStore:  sessionStore,
+		JWTSecret:     jwtSecret,
+		Blacklist:     auth.NewTokenBlacklist(redisClient),
+		RefreshStore:  auth.NewRefreshStore(redisClient),
+	}
+	if redisClient != nil {
+		log.Println("Auth token blacklist and refresh store using Redis")
+	} else {
+		log.Println("Warning: Redis unavailable, auth blacklist/refresh using in-memory store")
+	}
+	return auth.NewAuthServiceFromConfig(cfg), jwtSecret
 }
 
-func initChatService(querySvc *service.QueryService, conversationStore repository.UnifiedConversationStore, pgConversationStore *repository.PostgresConversationStore, taskAgentService *service.TaskAgentService, store unifiedDataStore, embedder embedding.Embedder, redisClient *redis.Client) *agent.ChatService {
+func initChatService(querySvc *service.QueryService, conversationStore repository.UnifiedConversationStore, pgConversationStore *repository.PostgresConversationStore, taskAgentService *service.TaskAgentService, toolRegistry *einotools.ToolRegistry, store unifiedDataStore, embedder embedding.Embedder, redisClient *redis.Client) *agent.ChatService {
 	routeEngine := router.NewRouteEngine(
 		router.DefaultRouteConfig(),
 		nil,
@@ -298,9 +317,13 @@ func initChatService(querySvc *service.QueryService, conversationStore repositor
 	ragExecutor := agent.NewRAGExecutor(llm.GetLLMClient(), retriever)
 	analysisExecutor := agent.NewAnalysisExecutor(llm.GetLLMClient(), retriever)
 
-	// ModeAgent 的唯一入口：ModeAgentExecutor
-	// 顶层 executor 只知道注入了一个 executor，不知道内部实现细节
-	modeAgentExecutor := agent.NewModeAgentExecutor(taskAgentService)
+	// ModeAgent 入口：默认 Supervisor；设置 AGENT_EXECUTOR=react 启用 ReAct 循环
+	modeAgentExecutor := selectModeAgentExecutor(taskAgentService, toolRegistry)
+	if modeAgentExecutor.Name() == "react_agent_executor" {
+		log.Println("ModeAgent using ReAct executor (AGENT_EXECUTOR=react)")
+	} else {
+		log.Println("ModeAgent using Supervisor coordinator executor")
+	}
 
 	agentExecutor := agent.NewAgentExecutor(chatExecutor, ragExecutor, analysisExecutor, modeAgentExecutor)
 
@@ -368,6 +391,37 @@ func initChatService(querySvc *service.QueryService, conversationStore repositor
 	}
 
 	return agent.NewChatService(routeEngine, agentExecutor, conversationStore, exactCache, workingMemory, sessionContext, userMemory)
+}
+
+// selectModeAgentExecutor 按环境变量选择 ModeAgent 实现。
+// AGENT_EXECUTOR=react 时使用 ReAct 思考-行动-观察循环；默认使用 Supervisor 多 Agent。
+func resolveCoordinatorType() einoagent.CoordinatorType {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("COORDINATOR_TYPE"))) {
+	case "plan":
+		return einoagent.CoordinatorTypePlan
+	case "pipeline":
+		return einoagent.CoordinatorTypePipeline
+	case "workflow":
+		return einoagent.CoordinatorTypeWorkflow
+	case "peer":
+		return einoagent.CoordinatorTypePeer
+	default:
+		return einoagent.CoordinatorTypeSupervisor
+	}
+}
+
+func selectModeAgentExecutor(taskAgentService *service.TaskAgentService, toolRegistry *einotools.ToolRegistry) agent.Executor {
+	if strings.EqualFold(strings.TrimSpace(os.Getenv("AGENT_EXECUTOR")), "react") {
+		tools, err := agent.ToolsFromRegistry(toolRegistry)
+		if err != nil {
+			log.Fatalf("Failed to build ReAct tools from registry: %v", err)
+		}
+		return agent.NewReActAgentExecutor(llm.GetLLMClient(), tools, agent.ReActAgentExecutorConfig{
+			MaxSteps:         10,
+			MaxRetryAttempts: 1, // 工具层 ToolGuard 已含重试/熔断
+		})
+	}
+	return agent.NewModeAgentExecutor(taskAgentService)
 }
 
 // initRedisClient 初始化 Redis 客户端（环境变量优先，其次 config.yaml）

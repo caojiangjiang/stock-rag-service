@@ -28,11 +28,31 @@ func (c *WorkflowCoordinator) Execute(ctx context.Context, taskState *TaskState)
 		return "没有配置任何 Agent", nil
 	}
 
+	rt := RuntimeFromContext(ctx)
+	if rt == nil {
+		rt = NewCoordinatorRuntime(c.Name(), nil)
+	}
+	ctx = WithRuntime(ctx, rt)
+	ctx, endSpan := StartCoordinatorSpan(ctx, c.Name(), taskState)
+	defer endSpan()
+
+	coordinatorStart := time.Now()
+	defer func() {
+		status := "success"
+		if taskState.Status == TaskStatusFailed {
+			status = "error"
+		}
+		RecordCoordinatorResult(c.Name(), status, time.Since(coordinatorStart).Seconds())
+	}()
+
+	runCtx, cancel := rt.DeriveContext(ctx)
+	defer cancel()
+
 	taskState.UpdateStatus(TaskStatusRunning)
 
-	workflow := c.buildWorkflowGraph(profiles)
+	workflow := c.buildWorkflowGraph(profiles, taskState)
 
-	runnable, err := workflow.Compile(ctx)
+	runnable, err := workflow.Compile(runCtx)
 	if err != nil {
 		taskState.UpdateStatus(TaskStatusFailed)
 		taskState.AddError(fmt.Sprintf("编译工作流失败: %v", err))
@@ -47,7 +67,7 @@ func (c *WorkflowCoordinator) Execute(ctx context.Context, taskState *TaskState)
 		"doc_types":    taskState.DocTypes,
 	}
 
-	result, err := runnable.Invoke(ctx, input)
+	result, err := runnable.Invoke(runCtx, input)
 	if err != nil {
 		taskState.UpdateStatus(TaskStatusFailed)
 		taskState.AddError(fmt.Sprintf("工作流执行失败: %v", err))
@@ -61,26 +81,14 @@ func (c *WorkflowCoordinator) Execute(ctx context.Context, taskState *TaskState)
 		output = fmt.Sprintf("%v", result)
 	}
 
-	for i, profile := range profiles {
-		stepTrace := StepTrace{
-			StepID:    fmt.Sprintf("%d", i+1),
-			ToolName:  profile.Name,
-			Input:     map[string]interface{}{"query": taskState.UserMessage},
-			Output:    fmt.Sprintf("[%s] 处理完成", profile.Role),
-			StartTime: time.Now(),
-			EndTime:   time.Now(),
-			Status:    TaskStatusCompleted,
-		}
-		taskState.AddStepTrace(stepTrace)
-	}
-
 	taskState.UpdateStatus(TaskStatusCompleted)
 	taskState.Summary = output
 
 	return output, nil
 }
 
-func (c *WorkflowCoordinator) buildWorkflowGraph(profiles []*AgentProfile) *compose.Workflow[map[string]any, any] {
+func (c *WorkflowCoordinator) buildWorkflowGraph(profiles []*AgentProfile, taskState *TaskState) *compose.Workflow[map[string]any, any] {
+	rt := NewCoordinatorRuntime(c.Name(), nil)
 	wf := compose.NewWorkflow[map[string]any, any]()
 
 	evidenceProfile := findProfileByName(profiles, "evidence_collector")
@@ -88,7 +96,7 @@ func (c *WorkflowCoordinator) buildWorkflowGraph(profiles []*AgentProfile) *comp
 	analystProfile := findProfileByName(profiles, "analyst_writer")
 
 	if evidenceProfile == nil || metricsProfile == nil || analystProfile == nil {
-		return c.buildSimpleWorkflow(profiles)
+		return c.buildSimpleWorkflow(profiles, taskState, rt)
 	}
 
 	evidenceNode := wf.AddLambdaNode("evidence_collector", compose.InvokableLambda(func(ctx context.Context, input map[string]any) (map[string]any, error) {
@@ -96,7 +104,9 @@ func (c *WorkflowCoordinator) buildWorkflowGraph(profiles []*AgentProfile) *comp
 		stockCode := getStringValue(input, "stock_code")
 		companyName := getStringValue(input, "company_name")
 
-		evidence, err := c.executeEvidenceRetrieval(ctx, evidenceProfile, task, stockCode, companyName)
+		evidence, err := rt.RunSubTask(ctx, taskState, "evidence_collector", func(stepCtx context.Context) (string, error) {
+			return c.executeEvidenceRetrieval(stepCtx, evidenceProfile, task, stockCode, companyName)
+		})
 		if err != nil {
 			return nil, fmt.Errorf("evidence retrieval failed: %w", err)
 		}
@@ -115,7 +125,9 @@ func (c *WorkflowCoordinator) buildWorkflowGraph(profiles []*AgentProfile) *comp
 		evidence := getStringValue(input, "evidence")
 		stockCode := getStringValue(input, "stock_code")
 
-		metrics, err := c.executeMetricExtraction(ctx, metricsProfile, task, evidence, stockCode)
+		metrics, err := rt.RunSubTask(ctx, taskState, "metric_extractor", func(stepCtx context.Context) (string, error) {
+			return c.executeMetricExtraction(stepCtx, metricsProfile, task, evidence, stockCode)
+		})
 		if err != nil {
 			return nil, fmt.Errorf("metric extraction failed: %w", err)
 		}
@@ -133,7 +145,9 @@ func (c *WorkflowCoordinator) buildWorkflowGraph(profiles []*AgentProfile) *comp
 		metrics := getStringValue(input, "metrics")
 		task := getStringValue(input, "task")
 
-		report, err := c.executeAnalysis(ctx, analystProfile, task, evidence, metrics)
+		report, err := rt.RunSubTask(ctx, taskState, "analyst_writer", func(stepCtx context.Context) (string, error) {
+			return c.executeAnalysis(stepCtx, analystProfile, task, evidence, metrics)
+		})
 		if err != nil {
 			return "", fmt.Errorf("analysis failed: %w", err)
 		}
@@ -147,13 +161,16 @@ func (c *WorkflowCoordinator) buildWorkflowGraph(profiles []*AgentProfile) *comp
 	return wf
 }
 
-func (c *WorkflowCoordinator) buildSimpleWorkflow(profiles []*AgentProfile) *compose.Workflow[map[string]any, any] {
+func (c *WorkflowCoordinator) buildSimpleWorkflow(profiles []*AgentProfile, taskState *TaskState, rt *CoordinatorRuntime) *compose.Workflow[map[string]any, any] {
 	wf := compose.NewWorkflow[map[string]any, any]()
 
 	for _, profile := range profiles {
 		nodeName := profile.Name
+		p := profile
 		node := wf.AddLambdaNode(nodeName, compose.InvokableLambda(func(ctx context.Context, input map[string]any) (string, error) {
-			return c.executeSingleAgent(ctx, profile, input)
+			return rt.RunSubTask(ctx, taskState, p.Name, func(stepCtx context.Context) (string, error) {
+				return c.executeSingleAgent(stepCtx, p, input)
+			})
 		}))
 		node.AddInput(compose.START)
 		wf.End().AddInput(nodeName)

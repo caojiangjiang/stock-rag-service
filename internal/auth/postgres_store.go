@@ -22,9 +22,11 @@ func (s *PostgresUserStore) InitTable() error {
 		username TEXT UNIQUE NOT NULL,
 		email TEXT UNIQUE NOT NULL,
 		password TEXT NOT NULL,
+		role TEXT NOT NULL DEFAULT 'user',
 		created_at TIMESTAMP NOT NULL,
 		updated_at TIMESTAMP NOT NULL
 	);
+	ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'user';
 	
 	CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
 	CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
@@ -36,12 +38,13 @@ func (s *PostgresUserStore) InitTable() error {
 func (s *PostgresUserStore) GetByID(userID string) (*User, bool) {
 	var user User
 	err := s.db.QueryRow(context.Background(), `
-		SELECT id, username, email, password, created_at, updated_at
+		SELECT id, username, email, password, COALESCE(role, 'user'), created_at, updated_at
 		FROM users WHERE id = $1`, userID).Scan(
 		&user.ID,
 		&user.Username,
 		&user.Email,
 		&user.Password,
+		&user.Role,
 		&user.CreatedAt,
 		&user.UpdatedAt,
 	)
@@ -54,12 +57,13 @@ func (s *PostgresUserStore) GetByID(userID string) (*User, bool) {
 func (s *PostgresUserStore) GetByUsername(username string) (*User, bool) {
 	var user User
 	err := s.db.QueryRow(context.Background(), `
-		SELECT id, username, email, password, created_at, updated_at
+		SELECT id, username, email, password, COALESCE(role, 'user'), created_at, updated_at
 		FROM users WHERE username = $1`, username).Scan(
 		&user.ID,
 		&user.Username,
 		&user.Email,
 		&user.Password,
+		&user.Role,
 		&user.CreatedAt,
 		&user.UpdatedAt,
 	)
@@ -72,12 +76,13 @@ func (s *PostgresUserStore) GetByUsername(username string) (*User, bool) {
 func (s *PostgresUserStore) GetByEmail(email string) (*User, bool) {
 	var user User
 	err := s.db.QueryRow(context.Background(), `
-		SELECT id, username, email, password, created_at, updated_at
+		SELECT id, username, email, password, COALESCE(role, 'user'), created_at, updated_at
 		FROM users WHERE email = $1`, email).Scan(
 		&user.ID,
 		&user.Username,
 		&user.Email,
 		&user.Password,
+		&user.Role,
 		&user.CreatedAt,
 		&user.UpdatedAt,
 	)
@@ -88,18 +93,24 @@ func (s *PostgresUserStore) GetByEmail(email string) (*User, bool) {
 }
 
 func (s *PostgresUserStore) Set(user *User) error {
+	role := user.Role
+	if role == "" {
+		role = string(RoleUser)
+	}
 	_, err := s.db.Exec(context.Background(), `
-		INSERT INTO users (id, username, email, password, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6)
+		INSERT INTO users (id, username, email, password, role, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		ON CONFLICT (id) DO UPDATE SET
 			username = EXCLUDED.username,
 			email = EXCLUDED.email,
 			password = EXCLUDED.password,
+			role = EXCLUDED.role,
 			updated_at = EXCLUDED.updated_at`,
 		user.ID,
 		user.Username,
 		user.Email,
 		user.Password,
+		role,
 		user.CreatedAt,
 		user.UpdatedAt,
 	)

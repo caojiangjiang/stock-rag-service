@@ -40,29 +40,34 @@ func NewRouter(querySvc QueryService, taskAgentService *service.TaskAgentService
 	mux.Handle("/metrics", metrics.Handler())
 
 	mux.HandleFunc("/stats", StatsHandler())
-	mux.HandleFunc("/documents/import", DocumentsImportHandler(querySvc))
-	mux.HandleFunc("/documents", DocumentsListHandler(querySvc))
 	longRunning := httpmiddleware.Timeout(120 * time.Second)
+	requireAuth := func(h http.HandlerFunc) http.HandlerFunc {
+		return ProtectHandler(authService, h)
+	}
+	requireAdmin := func(h http.HandlerFunc) http.HandlerFunc {
+		return ProtectAdminHandler(authService, h)
+	}
+
+	mux.HandleFunc("/documents/import", requireAdmin(DocumentsImportHandler(querySvc)))
+	mux.HandleFunc("/documents", DocumentsListHandler(querySvc))
 	mux.HandleFunc("/rag/query", longRunning(QueryHandler(querySvc)))
 	mux.HandleFunc("/rag/query/stream", longRunning(QueryStreamHandler(querySvc)))
 
 	agentHandler := NewAgentHandler(taskAgentService, jwtSecret)
-	mux.HandleFunc("/api/agent/execute", agentHandler.ExecuteTask)
-	mux.HandleFunc("/api/agent/analyze-stock", agentHandler.AnalyzeStock)
-	mux.HandleFunc("/api/agent/run", agentHandler.RunAgent)
-	mux.HandleFunc("/api/agent/session", agentHandler.GetSession)
+	mux.HandleFunc("/api/agent/execute", requireAuth(agentHandler.ExecuteTask))
+	mux.HandleFunc("/api/agent/analyze-stock", requireAuth(agentHandler.AnalyzeStock))
+	mux.HandleFunc("/api/agent/run", requireAuth(agentHandler.RunAgent))
+	mux.HandleFunc("/api/agent/session", requireAuth(agentHandler.GetSession))
 
-	// 统一聊天接口
 	chatHandler := NewChatHandler(chatService)
-	mux.HandleFunc("/api/chat", longRunning(chatHandler.Chat))
+	mux.HandleFunc("/api/chat", longRunning(requireAuth(chatHandler.Chat)))
 
-	// 对话管理接口
 	convHandler := NewConversationHandler(conversationStore)
-	mux.HandleFunc("/api/conversations", convHandler.ListConversations)
-	mux.HandleFunc("/api/conversations/get", convHandler.GetConversation)
-	mux.HandleFunc("/api/conversations/messages", convHandler.GetConversationMessages)
-	mux.HandleFunc("/api/conversations/create", convHandler.CreateConversation)
-	mux.HandleFunc("/api/conversations/delete", convHandler.DeleteConversation)
+	mux.HandleFunc("/api/conversations", requireAuth(convHandler.ListConversations))
+	mux.HandleFunc("/api/conversations/get", requireAuth(convHandler.GetConversation))
+	mux.HandleFunc("/api/conversations/messages", requireAuth(convHandler.GetConversationMessages))
+	mux.HandleFunc("/api/conversations/create", requireAuth(convHandler.CreateConversation))
+	mux.HandleFunc("/api/conversations/delete", requireAuth(convHandler.DeleteConversation))
 
 	RegisterAuthRoutes(mux, authService, jwtSecret)
 

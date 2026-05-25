@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"stock_rag/internal/eino/adapter"
 
@@ -33,16 +34,35 @@ func (c *PipelineCoordinator) Execute(ctx context.Context, taskState *TaskState)
 		return "没有配置任何 Agent", nil
 	}
 
+	rt := RuntimeFromContext(ctx)
+	if rt == nil {
+		rt = NewCoordinatorRuntime(c.Name(), nil)
+	}
+	ctx, endSpan := StartCoordinatorSpan(ctx, c.Name(), taskState)
+	defer endSpan()
+
+	coordinatorStart := time.Now()
+	defer func() {
+		status := "success"
+		if taskState.Status == TaskStatusFailed {
+			status = "error"
+		}
+		RecordCoordinatorResult(c.Name(), status, time.Since(coordinatorStart).Seconds())
+	}()
+
+	runCtx, cancel := rt.DeriveContext(ctx)
+	defer cancel()
+
 	taskState.UpdateStatus(TaskStatusRunning)
 
-	subAgents, err := c.createSubAgents(ctx, profiles)
+	subAgents, err := c.createSubAgents(runCtx, profiles)
 	if err != nil {
 		taskState.UpdateStatus(TaskStatusFailed)
 		taskState.AddError(fmt.Sprintf("创建子 Agent 失败: %v", err))
 		return "", err
 	}
 
-	sequentialAgent, err := adk.NewSequentialAgent(ctx, &adk.SequentialAgentConfig{
+	sequentialAgent, err := adk.NewSequentialAgent(runCtx, &adk.SequentialAgentConfig{
 		Name:        "pipeline_coordinator",
 		Description: "串行流水线协调器，按顺序执行每个子 Agent",
 		SubAgents:   subAgents,
@@ -53,35 +73,27 @@ func (c *PipelineCoordinator) Execute(ctx context.Context, taskState *TaskState)
 		return "", err
 	}
 
+	userContent := taskState.UserMessage
+	if taskState.StockCode != "" {
+		userContent += fmt.Sprintf("\n\n股票代码: %s", taskState.StockCode)
+	}
+
 	input := &adk.AgentInput{
 		Messages: []adk.Message{
 			{
 				Role:    schema.User,
-				Content: taskState.UserMessage,
+				Content: userContent,
 			},
 		},
 		EnableStreaming: false,
 	}
 
-	iterator := sequentialAgent.Run(ctx, input)
-
-	var finalResult string
-	for {
-		event, ok := iterator.Next()
-		if !ok {
-			break
-		}
-
-		if event.Err != nil {
-			taskState.UpdateStatus(TaskStatusFailed)
-			taskState.AddError(fmt.Sprintf("Pipeline 执行错误: %v", event.Err))
-			return "", event.Err
-		}
-
-		if event.Output != nil && event.Output.MessageOutput != nil {
-			msg, _ := event.Output.MessageOutput.GetMessage()
-			finalResult += msg.Content
-		}
+	iterator := sequentialAgent.Run(runCtx, input)
+	finalResult, err := rt.ProcessADKIterator(runCtx, taskState, iterator)
+	if err != nil {
+		taskState.UpdateStatus(TaskStatusFailed)
+		taskState.AddError(fmt.Sprintf("Pipeline 执行错误: %v", err))
+		return finalResult, err
 	}
 
 	taskState.UpdateStatus(TaskStatusCompleted)

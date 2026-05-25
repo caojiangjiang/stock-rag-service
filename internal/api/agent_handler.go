@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"time"
 
-	"stock_rag/internal/auth"
+	"stock_rag/internal/metrics"
 	"stock_rag/internal/service"
 )
 
@@ -31,17 +31,8 @@ func (h *AgentHandler) ExecuteTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 从 Authorization header 获取 token 并解析用户信息
 	ctx := r.Context()
-	token := r.Header.Get("Authorization")
-	userID := ""
-	if token != "" && len(token) > 7 && token[:7] == "Bearer " {
-		claims, err := auth.ParseUserFromToken(token[7:], h.jwtSecret)
-		if err == nil && claims.UserID != "" {
-			ctx = auth.ContextWithUserID(ctx, claims.UserID)
-			userID = claims.UserID
-		}
-	}
+	userID := UserIDFromRequest(ctx)
 
 	// 解析请求
 	var req struct {
@@ -115,17 +106,8 @@ func (h *AgentHandler) AnalyzeStock(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 从 Authorization header 获取 token 并解析用户信息
 	ctx := r.Context()
-	token := r.Header.Get("Authorization")
-	userID := ""
-	if token != "" && len(token) > 7 && token[:7] == "Bearer " {
-		claims, err := auth.ParseUserFromToken(token[7:], h.jwtSecret)
-		if err == nil && claims.UserID != "" {
-			ctx = auth.ContextWithUserID(ctx, claims.UserID)
-			userID = claims.UserID
-		}
-	}
+	userID := UserIDFromRequest(ctx)
 
 	// 获取对话 ID（优先使用 conversation_id，兼容 session_id）
 	conversationID := r.URL.Query().Get("conversation_id")
@@ -136,6 +118,9 @@ func (h *AgentHandler) AnalyzeStock(w http.ResponseWriter, r *http.Request) {
 		conversationID = fmt.Sprintf("conversation-%d", time.Now().UnixNano())
 	}
 
+	analyzeStart := time.Now()
+	endpoint := "analyze_stock"
+
 	// 执行股票分析（使用新的 Supervisor + Specialists 架构）
 	result, err := h.taskAgentService.ExecuteComplexTask(ctx, &service.ComplexTaskRequest{
 		ConversationID: conversationID,
@@ -144,8 +129,19 @@ func (h *AgentHandler) AnalyzeStock(w http.ResponseWriter, r *http.Request) {
 		UserMessage:    fmt.Sprintf("分析股票 %s", symbol),
 		StockCode:      symbol,
 	})
+	elapsed := time.Since(analyzeStart).Seconds()
 	if err != nil {
+		metrics.RecordAgentComplexTask(endpoint, "error", elapsed)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	status := "success"
+	if result == nil || result.Error != "" || result.Content == "" {
+		status = "error"
+	}
+	metrics.RecordAgentComplexTask(endpoint, status, elapsed)
+	if result != nil && result.Error != "" {
+		http.Error(w, result.Error, http.StatusInternalServerError)
 		return
 	}
 
@@ -225,17 +221,8 @@ func (h *AgentHandler) RunAgent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 从 Authorization header 获取 token 并解析用户信息
 	ctx := r.Context()
-	token := r.Header.Get("Authorization")
-	userID := ""
-	if token != "" && len(token) > 7 && token[:7] == "Bearer " {
-		claims, err := auth.ParseUserFromToken(token[7:], h.jwtSecret)
-		if err == nil && claims.UserID != "" {
-			ctx = auth.ContextWithUserID(ctx, claims.UserID)
-			userID = claims.UserID
-		}
-	}
+	userID := UserIDFromRequest(ctx)
 
 	// 解析请求
 	var req AgentRequest

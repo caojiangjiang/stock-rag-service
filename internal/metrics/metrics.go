@@ -172,6 +172,48 @@ var (
 		},
 	)
 
+	AgentCoordinatorTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "agent_coordinator_total",
+			Help: "Total coordinator executions",
+		},
+		[]string{"coordinator", "status"},
+	)
+
+	AgentCoordinatorDuration = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "agent_coordinator_duration_seconds",
+			Help:    "Coordinator execution latency in seconds",
+			Buckets: []float64{1, 2, 5, 10, 30, 60, 120, 300},
+		},
+		[]string{"coordinator"},
+	)
+
+	AgentSubtaskTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "agent_subtask_total",
+			Help: "Total sub-agent or subtask invocations within coordinators",
+		},
+		[]string{"coordinator", "subtask", "status"},
+	)
+
+	AgentComplexTaskTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "agent_complex_task_total",
+			Help: "Total complex agent task requests (e.g. analyze-stock)",
+		},
+		[]string{"endpoint", "status"},
+	)
+
+	AgentComplexTaskDuration = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "agent_complex_task_duration_seconds",
+			Help:    "Complex agent task latency in seconds",
+			Buckets: []float64{1, 2, 5, 10, 30, 60, 120, 300},
+		},
+		[]string{"endpoint"},
+	)
+
 	// 数据库连接池指标
 	DBPoolConnections = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
@@ -250,6 +292,32 @@ func RecordRAGRetrieval(status, stage string, seconds float64, resultCount int) 
 	RAGRetrievalTotal.WithLabelValues(status).Inc()
 	RAGRetrievalDuration.WithLabelValues(stage).Observe(seconds)
 	RAGRetrievalResults.Observe(float64(resultCount))
+}
+
+// RecordAgentStep 记录 Agent 单步执行（ReAct 等）。
+func RecordAgentStep(seconds float64) {
+	AgentStepsTotal.Inc()
+	AgentStepDuration.Observe(seconds)
+}
+
+// RecordAgentCoordinator 记录协调器整体执行。
+func RecordAgentCoordinator(coordinator, status string, seconds float64) {
+	AgentCoordinatorTotal.WithLabelValues(coordinator, status).Inc()
+	AgentCoordinatorDuration.WithLabelValues(coordinator).Observe(seconds)
+}
+
+// RecordAgentSubtask 记录协调器内子任务/子 Agent 调用。
+func RecordAgentSubtask(coordinator, subtask, status string, seconds float64) {
+	AgentSubtaskTotal.WithLabelValues(coordinator, subtask, status).Inc()
+	if seconds > 0 {
+		AgentStepDuration.Observe(seconds)
+	}
+}
+
+// RecordAgentComplexTask 记录复杂任务 API（如 analyze-stock）。
+func RecordAgentComplexTask(endpoint, status string, seconds float64) {
+	AgentComplexTaskTotal.WithLabelValues(endpoint, status).Inc()
+	AgentComplexTaskDuration.WithLabelValues(endpoint).Observe(seconds)
 }
 
 // RecordLLMRequest 记录 LLM 请求

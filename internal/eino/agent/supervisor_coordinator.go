@@ -8,11 +8,9 @@ import (
 	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/adk/prebuilt/supervisor"
 	"github.com/cloudwego/eino/schema"
-	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 
 	"stock_rag/internal/eino/adapter"
-	"stock_rag/internal/observability"
 )
 
 type SupervisorCoordinator struct {
@@ -43,28 +41,33 @@ func (c *SupervisorCoordinator) SetAgentBuilder(builder *AgentBuilder) {
 }
 
 func (c *SupervisorCoordinator) Execute(ctx context.Context, taskState *TaskState) (string, error) {
-	ctx, rootSpan := observability.StartSpan(ctx, "SupervisorCoordinator.Execute")
-	rootSpan.SetAttributes(
-		attribute.String("task.conversation_id", taskState.ConversationID),
-		attribute.String("task.message_id", taskState.MessageID),
-		attribute.String("task.stock_code", taskState.StockCode),
-	)
+	rt := RuntimeFromContext(ctx)
+	if rt == nil {
+		rt = NewCoordinatorRuntime(c.Name(), nil)
+	}
+	ctx, endSpan := StartCoordinatorSpan(ctx, c.Name(), taskState)
+	defer endSpan()
+
+	coordinatorStart := time.Now()
 	defer func() {
-		rootSpan.SetAttributes(
-			attribute.Int("task.step_count", taskState.CurrentStep),
-			attribute.String("task.status", string(taskState.Status)),
-		)
-		rootSpan.End()
+		status := "success"
+		if taskState.Status == TaskStatusFailed {
+			status = "error"
+		}
+		RecordCoordinatorResult(c.Name(), status, time.Since(coordinatorStart).Seconds())
 	}()
 
-	supervisorAgent, err := c.createSupervisorAgent(ctx)
+	runCtx, cancel := rt.DeriveContext(ctx)
+	defer cancel()
+
+	supervisorAgent, err := c.createSupervisorAgent(runCtx)
 	if err != nil {
 		taskState.UpdateStatus(TaskStatusFailed)
 		taskState.AddError(fmt.Sprintf("创建 Supervisor Agent 失败: %v", err))
 		return "", err
 	}
 
-	subAgents, err := c.createSubAgents(ctx)
+	subAgents, err := c.createSubAgents(runCtx)
 	if err != nil {
 		taskState.UpdateStatus(TaskStatusFailed)
 		taskState.AddError(fmt.Sprintf("创建子 Agent 失败: %v", err))
@@ -76,7 +79,7 @@ func (c *SupervisorCoordinator) Execute(ctx context.Context, taskState *TaskStat
 		SubAgents:  subAgents,
 	}
 
-	sv, err := supervisor.New(ctx, config)
+	sv, err := supervisor.New(runCtx, config)
 	if err != nil {
 		taskState.UpdateStatus(TaskStatusFailed)
 		taskState.AddError(fmt.Sprintf("创建 Supervisor 失败: %v", err))
@@ -85,73 +88,26 @@ func (c *SupervisorCoordinator) Execute(ctx context.Context, taskState *TaskStat
 
 	taskState.UpdateStatus(TaskStatusRunning)
 
+	userContent := taskState.UserMessage
+	if taskState.StockCode != "" {
+		userContent += fmt.Sprintf("\n\n股票代码: %s", taskState.StockCode)
+	}
+
 	input := &adk.AgentInput{
 		Messages: []adk.Message{
 			{
 				Role:    schema.User,
-				Content: taskState.UserMessage,
+				Content: userContent,
 			},
 		},
 		EnableStreaming: false,
 	}
 
-	iterator := sv.Run(ctx, input)
-
-	var finalResult string
-	var currentSpan trace.Span
-	for {
-		event, ok := iterator.Next()
-		if !ok {
-			if currentSpan != nil {
-				currentSpan.End()
-			}
-			break
-		}
-
-		if event.Err != nil {
-			if currentSpan != nil {
-				currentSpan.End()
-			}
-			taskState.UpdateStatus(TaskStatusFailed)
-			taskState.AddError(fmt.Sprintf("Supervisor 执行错误: %v", event.Err))
-			return "", event.Err
-		}
-
-		if event.Output != nil && event.Output.MessageOutput != nil {
-			msg, _ := event.Output.MessageOutput.GetMessage()
-			content := msg.Content
-			finalResult += content
-
-			agentName := event.AgentName
-			if agentName == "" {
-				agentName = "unknown_agent"
-			}
-
-			stepStartTime := time.Now()
-
-			ctx, currentSpan = trace.SpanFromContext(ctx).TracerProvider().Tracer("supervisor_coordinator").Start(ctx, fmt.Sprintf("agent.%s", agentName))
-
-			stepTrace := StepTrace{
-				StepID:    fmt.Sprintf("%d", taskState.CurrentStep+1),
-				ToolName:  agentName,
-				Input:     map[string]interface{}{"query": taskState.UserMessage},
-				Output:    content,
-				StartTime: stepStartTime,
-				EndTime:   time.Now(),
-				Status:    TaskStatusCompleted,
-			}
-
-			stepTrace.LatencyMS = stepTrace.EndTime.Sub(stepTrace.StartTime).Milliseconds()
-
-			taskState.AddStepTrace(stepTrace)
-			taskState.CurrentStep++
-
-			currentSpan.End()
-		}
-
-		if event.Action != nil && event.Action.TransferToAgent != nil {
-			taskState.AddFinding(fmt.Sprintf("转移到 Agent: %s", event.Action.TransferToAgent.DestAgentName))
-		}
+	iterator := sv.Run(runCtx, input)
+	finalResult, err := rt.ProcessADKIterator(runCtx, taskState, iterator)
+	if err != nil {
+		taskState.UpdateStatus(TaskStatusFailed)
+		return finalResult, err
 	}
 
 	taskState.UpdateStatus(TaskStatusCompleted)
