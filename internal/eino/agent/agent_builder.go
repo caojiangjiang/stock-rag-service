@@ -84,13 +84,15 @@ func (b *AgentBuilder) getToolsForProfile(profile *AgentProfile) ([]tool.BaseToo
 				desc:      typedTool.Description(),
 				schema:    typedTool.GetSchema(),
 				typedTool: typedTool,
+				registry:  b.toolRegistry,
 			}
 			einoTools = append(einoTools, einoTool)
 		} else {
 			einoTool := &registryToolAdapter{
-				name: toolInfo.Name,
-				desc: toolInfo.Description,
-				tool: toolInfo.Instance,
+				name:     toolInfo.Name,
+				desc:     toolInfo.Description,
+				tool:     toolInfo.Instance,
+				registry: b.toolRegistry,
 			}
 			einoTools = append(einoTools, einoTool)
 		}
@@ -123,9 +125,10 @@ func (b *AgentBuilder) buildChatModelAgentWithTools(ctx context.Context, profile
 }
 
 type registryToolAdapter struct {
-	name string
-	desc string
-	tool tools.Tool
+	name     string
+	desc     string
+	tool     tools.Tool
+	registry *tools.ToolRegistry
 }
 
 func (t *registryToolAdapter) Name(ctx context.Context) (string, error) {
@@ -137,7 +140,11 @@ func (t *registryToolAdapter) Desc(ctx context.Context) (string, error) {
 }
 
 func (t *registryToolAdapter) Invoke(ctx context.Context, query string) (string, error) {
-	return t.tool.Run(ctx, map[string]interface{}{"query": query})
+	args := parseTypedArgs(query)
+	if t.registry != nil {
+		return t.registry.Invoke(ctx, t.name, args)
+	}
+	return t.tool.Run(ctx, args)
 }
 
 func (t *registryToolAdapter) Info(ctx context.Context) (*schema.ToolInfo, error) {
@@ -155,6 +162,7 @@ type typedToolAdapter struct {
 	desc      string
 	schema    *schema.ToolInfo
 	typedTool tools.TypedToolBase
+	registry  *tools.ToolRegistry
 }
 
 func (t *typedToolAdapter) Name(ctx context.Context) (string, error) {
@@ -167,6 +175,9 @@ func (t *typedToolAdapter) Desc(ctx context.Context) (string, error) {
 
 func (t *typedToolAdapter) Invoke(ctx context.Context, query string) (string, error) {
 	args := parseTypedArgs(query)
+	if t.registry != nil {
+		return t.registry.Invoke(ctx, t.name, args)
+	}
 	return t.typedTool.Invoke(ctx, args)
 }
 

@@ -46,6 +46,7 @@ type ToolRegistry struct {
 	tools      map[string]*ToolInfo
 	typedTools map[string]*TypedToolInfo
 	profiles   map[string][]string
+	guard      *ToolGuard
 }
 
 func NewToolRegistry() *ToolRegistry {
@@ -53,7 +54,43 @@ func NewToolRegistry() *ToolRegistry {
 		tools:      make(map[string]*ToolInfo),
 		typedTools: make(map[string]*TypedToolInfo),
 		profiles:   make(map[string][]string),
+		guard:      NewToolGuard(DefaultGuardConfig()),
 	}
+}
+
+// SetGuard 替换工具防护器（测试或自定义配置）。
+func (r *ToolRegistry) SetGuard(guard *ToolGuard) {
+	r.guard = guard
+}
+
+// Guard 返回当前工具防护器。
+func (r *ToolRegistry) Guard() *ToolGuard {
+	return r.guard
+}
+
+// Invoke 统一入口：对工具执行带超时/重试/熔断的调用。
+func (r *ToolRegistry) Invoke(ctx context.Context, name string, args map[string]interface{}) (string, error) {
+	info, err := r.GetInfo(name)
+	if err != nil {
+		return "", err
+	}
+
+	toolName := FormatToolName(name)
+	return r.guard.Run(ctx, toolName, func(callCtx context.Context) (string, error) {
+		if info.IsTyped {
+			if info.TypedInstance == nil {
+				return "", fmt.Errorf("工具 %s 未绑定强类型实例", toolName)
+			}
+			if typed, ok := info.TypedInstance.(TypedToolBase); ok {
+				return typed.Invoke(callCtx, args)
+			}
+			return "", fmt.Errorf("工具 %s 强类型实例无效", toolName)
+		}
+		if info.Instance == nil {
+			return "", fmt.Errorf("工具 %s 未绑定实例", toolName)
+		}
+		return info.Instance.Run(callCtx, args)
+	})
 }
 
 func (r *ToolRegistry) RegisterTypedTool(tool TypedToolBase, profiles ...string) {

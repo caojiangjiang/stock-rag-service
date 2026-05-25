@@ -211,18 +211,5 @@ func (c *DebateCoordinator) defaultGenerateConclusion(arguments []string, profil
 
 // executeTool 执行单个工具
 func (c *DebateCoordinator) executeTool(ctx context.Context, toolName string, taskState *TaskState) (string, error) {
-	tool, err := c.GetToolInstance(toolName)
-	if err != nil {
-		return "", fmt.Errorf("工具 %s 未找到: %v", toolName, err)
-	}
-
-	if tool != nil {
-		params := map[string]interface{}{
-			"query":      taskState.UserMessage,
-			"stock_code": taskState.StockCode,
-		}
-		return tool.Run(ctx, params)
-	}
-
-	return "", fmt.Errorf("无法执行工具 %s", toolName)
+	return c.InvokeTool(ctx, toolName, ToolParamsFromTask(taskState))
 }

@@ -124,21 +124,11 @@ func (c *PeerCoordinator) executeWithTools(ctx context.Context, profile *AgentPr
 
 // executeWithTool 执行单个工具
 func (c *PeerCoordinator) executeWithTool(ctx context.Context, toolName string, taskState *TaskState) (string, error) {
-	// 通过 BaseCoordinator 获取工具实例并执行
-	tool, err := c.GetToolInstance(toolName)
+	result, err := c.InvokeTool(ctx, toolName, ToolParamsFromTask(taskState))
 	if err != nil {
-		return "", fmt.Errorf("工具 %s 未找到: %v", toolName, err)
+		return "", fmt.Errorf("工具 %s 执行失败: %v", toolName, err)
 	}
-
-	if tool != nil {
-		params := map[string]interface{}{
-			"query":      taskState.UserMessage,
-			"stock_code": taskState.StockCode,
-		}
-		return tool.Run(ctx, params)
-	}
-
-	return "", fmt.Errorf("无法执行工具 %s", toolName)
+	return result, nil
 }
 
 // summarizeResults 汇总并行结果

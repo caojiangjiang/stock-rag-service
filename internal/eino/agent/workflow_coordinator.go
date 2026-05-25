@@ -216,9 +216,9 @@ func (c *WorkflowCoordinator) executeMetricExtraction(ctx context.Context, profi
 
 输出格式示例：
 【财务指标】
-营业收入：XXX亿元（同比+XX%）
-净利润：XXX亿元（同比+XX%）
-净资产收益率：XX%
+营业收入：XXX亿元（同比+XX%%）
+净利润：XXX亿元（同比+XX%%）
+净资产收益率：XX%%
 ...`, task, stockCode, evidence)
 
 	messages := []*schema.Message{

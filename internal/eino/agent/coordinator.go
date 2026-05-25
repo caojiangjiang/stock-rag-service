@@ -110,3 +110,22 @@ func (c *BaseCoordinator) GetToolInstance(toolName string) (tools.Tool, error) {
 	}
 	return toolInfo.Instance, nil
 }
+
+// InvokeTool 通过 ToolRegistry 统一调用（超时 / 重试 / 熔断）。
+func (c *BaseCoordinator) InvokeTool(ctx context.Context, toolName string, params map[string]interface{}) (string, error) {
+	if c.toolRegistry == nil {
+		return "", fmt.Errorf("tool registry not set")
+	}
+	return c.toolRegistry.Invoke(ctx, toolName, params)
+}
+
+// ToolParamsFromTask 从任务状态构造通用工具参数。
+func ToolParamsFromTask(taskState *TaskState) map[string]interface{} {
+	if taskState == nil {
+		return map[string]interface{}{}
+	}
+	return map[string]interface{}{
+		"query":      taskState.UserMessage,
+		"stock_code": taskState.StockCode,
+	}
+}

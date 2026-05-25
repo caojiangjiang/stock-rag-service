@@ -130,6 +130,32 @@ var (
 		[]string{"type"}, // prompt or completion
 	)
 
+	// 工具调用指标
+	ToolCallsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "tool_calls_total",
+			Help: "Total number of tool invocations",
+		},
+		[]string{"tool", "status"},
+	)
+
+	ToolCallDuration = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "tool_call_duration_seconds",
+			Help:    "Tool invocation latency in seconds",
+			Buckets: []float64{0.05, 0.1, 0.5, 1, 2, 5, 10, 30, 60},
+		},
+		[]string{"tool"},
+	)
+
+	ToolCircuitOpenTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "tool_circuit_open_total",
+			Help: "Total number of tool calls rejected by circuit breaker",
+		},
+		[]string{"tool"},
+	)
+
 	// Agent 指标
 	AgentStepsTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
@@ -208,6 +234,15 @@ func RecordHTTPDuration(method, path string, seconds float64) {
 func RecordChatRequest(status string, seconds float64) {
 	ChatRequestsTotal.WithLabelValues(status).Inc()
 	ChatRequestDuration.Observe(seconds)
+}
+
+// RecordToolCall 记录工具调用。
+func RecordToolCall(tool, status string, seconds float64) {
+	ToolCallsTotal.WithLabelValues(tool, status).Inc()
+	ToolCallDuration.WithLabelValues(tool).Observe(seconds)
+	if status == "circuit_open" {
+		ToolCircuitOpenTotal.WithLabelValues(tool).Inc()
+	}
 }
 
 // RecordRAGRetrieval 记录 RAG 检索
