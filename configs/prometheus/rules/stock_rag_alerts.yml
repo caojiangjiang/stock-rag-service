@@ -1,0 +1,53 @@
+groups:
+  - name: stock_rag_alerts
+    rules:
+      - alert: StockRagHighHTTP5xxRate
+        expr: |
+          sum(rate(http_requests_total{status=~"5.."}[5m]))
+          /
+          sum(rate(http_requests_total[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "stock_rag HTTP 5xx 比例过高"
+          description: "过去 5 分钟超过 5% 的请求返回 5xx"
+
+      - alert: StockRagLowCacheHitRate
+        expr: cache_hit_ratio < 0.2 and (sum(rate(cache_hits_total[10m])) + sum(rate(cache_misses_total[10m]))) > 0.1
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "stock_rag 缓存命中率偏低"
+          description: "cache_hit_ratio 低于 20%，请检查 Redis 与缓存键"
+
+      - alert: StockRagHighLLMLatencyP95
+        expr: histogram_quantile(0.95, sum(rate(llm_request_duration_seconds_bucket[5m])) by (le)) > 30
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "stock_rag LLM P95 延迟过高"
+          description: "LLM 请求 P95 超过 30s"
+
+      - alert: StockRagLLMQueueBacklog
+        expr: llm_queue_pending > llm_queue_max_size * 0.8 and llm_queue_max_size > 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "stock_rag LLM 队列积压"
+          description: "等待队列超过容量 80%"
+
+      - alert: StockRagChatErrorRateHigh
+        expr: |
+          sum(rate(chat_requests_total{status="error"}[5m]))
+          /
+          sum(rate(chat_requests_total[5m])) > 0.1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "stock_rag Chat 错误率过高"
+          description: "按路由模式的 Chat 请求错误率超过 10%"

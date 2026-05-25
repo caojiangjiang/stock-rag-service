@@ -84,11 +84,32 @@ services:
       - "9090:9090"
     volumes:
       - ./configs/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./configs/prometheus/rules:/etc/prometheus/rules
       - prometheus_data:/prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
       - '--web.enable-lifecycle'
+    restart: unless-stopped
+    networks:
+      - stock_rag_network
+    profiles:
+      - monitoring
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - ./configs/grafana/provisioning:/etc/grafana/provisioning
+      - ./configs/grafana/dashboards:/etc/grafana/dashboards
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - prometheus
     restart: unless-stopped
     networks:
       - stock_rag_network
@@ -114,6 +135,7 @@ volumes:
   redis_data:
   postgres_data:
   prometheus_data:
+  grafana_data:
 
 networks:
   stock_rag_network:

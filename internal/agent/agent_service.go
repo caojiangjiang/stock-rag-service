@@ -79,10 +79,19 @@ func (s *ChatService) Chat(ctx context.Context, req *ChatRequest) (resp *ChatRes
 	startTime := time.Now()
 	defer func() {
 		status := "success"
-		if err != nil || (resp != nil && resp.Error != "") {
+		mode := "unknown"
+		if resp != nil {
+			if resp.Mode != "" {
+				mode = resp.Mode
+			}
+			if resp.Error != "" {
+				status = "error"
+			}
+		}
+		if err != nil {
 			status = "error"
 		}
-		metrics.RecordChatRequest(status, time.Since(startTime).Seconds())
+		metrics.RecordChatRequest(mode, status, time.Since(startTime).Seconds())
 	}()
 
 	if req == nil {

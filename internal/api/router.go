@@ -1,7 +1,6 @@
 package api
 
 import (
-	"encoding/json"
 	"net/http"
 	"time"
 
@@ -9,7 +8,6 @@ import (
 
 	"stock_rag/internal/agent"
 	"stock_rag/internal/auth"
-	"stock_rag/internal/llm"
 	"stock_rag/internal/metrics"
 	"stock_rag/internal/pkg/httpmiddleware"
 	"stock_rag/internal/repository"
@@ -39,7 +37,7 @@ func NewRouter(querySvc QueryService, taskAgentService *service.TaskAgentService
 	// Prometheus metrics 端点
 	mux.Handle("/metrics", metrics.Handler())
 
-	mux.HandleFunc("/stats", StatsHandler())
+	mux.HandleFunc("/stats", StatsHandler()) // 见 stats_handler.go
 	longRunning := httpmiddleware.Timeout(120 * time.Second)
 	requireAuth := func(h http.HandlerFunc) http.HandlerFunc {
 		return ProtectHandler(authService, h)
@@ -75,109 +73,6 @@ func NewRouter(querySvc QueryService, taskAgentService *service.TaskAgentService
 	mux.Handle("/", http.FileServer(http.Dir("web")))
 
 	return mux
-}
-
-// SystemStats 系统性能面板
-
-type SystemStats struct {
-	Query  QueryStats  `json:"query"`
-	Stream StreamStats `json:"stream"`
-	Agent  AgentStats  `json:"agent"`
-	Cache  CacheStats  `json:"cache"`
-	Queue  QueueStats  `json:"queue"`
-	Error  ErrorStats  `json:"error"`
-}
-
-// QueryStats 查询指标
-type QueryStats struct {
-	Total      int64   `json:"total"`
-	Success    int64   `json:"success"`
-	Failure    int64   `json:"failure"`
-	AvgLatency float64 `json:"avg_latency_ms"`
-	P95Latency float64 `json:"p95_latency_ms"`
-}
-
-// StreamStats 流式指标
-type StreamStats struct {
-	Total         int64   `json:"total"`
-	Success       int64   `json:"success"`
-	Failure       int64   `json:"failure"`
-	AvgFirstToken float64 `json:"avg_first_token_ms"`
-	P95FirstToken float64 `json:"p95_first_token_ms"`
-}
-
-// AgentStats Agent指标
-type AgentStats struct {
-	Total            int64         `json:"total"`
-	AvgSteps         float64       `json:"avg_steps"`
-	StepDistribution map[int]int64 `json:"step_distribution"`
-	AvgStepLatency   float64       `json:"avg_step_latency_ms"`
-}
-
-// CacheStats 缓存指标
-type CacheStats struct {
-	HitRate float64 `json:"hit_rate"`
-	Total   int64   `json:"total"`
-	Hits    int64   `json:"hits"`
-	Misses  int64   `json:"misses"`
-}
-
-// QueueStats 队列指标
-type QueueStats struct {
-	Pending    int     `json:"pending"`
-	Processing int     `json:"processing"`
-	MaxQueue   int     `json:"max_queue"`
-	AvgWait    float64 `json:"avg_wait_ms"`
-}
-
-// ErrorStats 错误指标
-type ErrorStats struct {
-	Total          int64 `json:"total"`
-	Timeout        int64 `json:"timeout"`
-	LLMError       int64 `json:"llm_error"`
-	RetrievalError int64 `json:"retrieval_error"`
-	AgentError     int64 `json:"agent_error"`
-}
-
-// StatsHandler 返回系统性能面板
-func StatsHandler() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-
-		summary := metrics.GatherSummary()
-		stats := SystemStats{
-			Cache: CacheStats{
-				HitRate: summary.Cache.HitRate,
-				Total:   int64(summary.Cache.Hits + summary.Cache.Misses),
-				Hits:    int64(summary.Cache.Hits),
-				Misses:  int64(summary.Cache.Misses),
-			},
-			Error: ErrorStats{
-				Total:          int64(summary.Chat.Error + summary.LLM.Error + summary.RAG.Error),
-				LLMError:       int64(summary.LLM.Error),
-				RetrievalError: int64(summary.RAG.Error),
-				AgentError:     int64(summary.Chat.Error),
-			},
-		}
-
-		// 获取LLM队列信息
-		client := llm.GetLLMClient()
-		if client != nil {
-			queueStats := client.GetStats()
-			stats.Queue = QueueStats{
-				Pending:    queueStats["pending"].(int),
-				Processing: queueStats["processing"].(int),
-				MaxQueue:   queueStats["max_queue"].(int),
-				AvgWait:    queueStats["avg_wait"].(float64),
-			}
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(stats)
-	}
 }
 
 // DefaultRoutes 返回第一版推荐接口清单。

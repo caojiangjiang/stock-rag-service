@@ -44,14 +44,44 @@ var (
 			Name: "chat_requests_total",
 			Help: "Total number of chat requests",
 		},
-		[]string{"status"},
+		[]string{"status", "mode"},
 	)
 
-	ChatRequestDuration = promauto.NewHistogram(
+	ChatRequestDuration = promauto.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name:    "chat_request_duration_seconds",
 			Help:    "Chat request latency in seconds",
-			Buckets: []float64{0.1, 0.5, 1, 2, 5, 10, 30},
+			Buckets: []float64{0.1, 0.5, 1, 2, 5, 10, 30, 60, 120},
+		},
+		[]string{"mode"},
+	)
+
+	// LLM 队列（由 UpdateLLMQueueGauges 同步）
+	LLMQueuePending = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "llm_queue_pending",
+			Help: "Number of LLM requests waiting in queue",
+		},
+	)
+
+	LLMQueueActive = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "llm_queue_active",
+			Help: "Number of LLM requests currently processing",
+		},
+	)
+
+	LLMQueueMaxSize = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "llm_queue_max_size",
+			Help: "Maximum LLM queue capacity",
+		},
+	)
+
+	LLMQueueAvgWaitMs = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "llm_queue_avg_wait_ms",
+			Help: "Average wait time in LLM queue milliseconds",
 		},
 	)
 
@@ -272,10 +302,13 @@ func RecordHTTPDuration(method, path string, seconds float64) {
 	HTTPRequestDuration.WithLabelValues(method, path).Observe(seconds)
 }
 
-// RecordChatRequest 记录聊天请求
-func RecordChatRequest(status string, seconds float64) {
-	ChatRequestsTotal.WithLabelValues(status).Inc()
-	ChatRequestDuration.Observe(seconds)
+// RecordChatRequest 记录聊天请求（按路由 mode 与状态）。
+func RecordChatRequest(mode, status string, seconds float64) {
+	if mode == "" {
+		mode = "unknown"
+	}
+	ChatRequestsTotal.WithLabelValues(status, mode).Inc()
+	ChatRequestDuration.WithLabelValues(mode).Observe(seconds)
 }
 
 // RecordToolCall 记录工具调用。
