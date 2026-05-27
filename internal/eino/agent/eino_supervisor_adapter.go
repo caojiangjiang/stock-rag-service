@@ -61,12 +61,14 @@ func (a *CoordinatorSupervisorAdapter) ExecuteComplexTask(ctx context.Context, r
 	coordinatorName := a.coordinator.Name()
 	handler := NewRetryHandler(&a.runtime.Strategy)
 	var lastErr error
+	var taskState *TaskState
 
 	for handler.ShouldRetry() {
 		attempt := handler.currentRetry + 1
-		taskState := NewTaskState(req.ConversationID, req.MessageID, req.UserID, req.UserMessage)
+		taskState = NewTaskState(req.ConversationID, req.MessageID, req.UserID, req.UserMessage)
 		EnrichTaskState(taskState, req.StockCode)
 		taskState.RetryCount = attempt - 1
+		taskState.OnChunk = req.OnChunk // 透传流式回调
 
 		runCtx, cancel := a.runtime.DeriveContext(ctx)
 		runCtx = WithRuntime(runCtx, a.runtime)
@@ -81,7 +83,11 @@ func (a *CoordinatorSupervisorAdapter) ExecuteComplexTask(ctx context.Context, r
 			if taskState.Status == TaskStatusFailed {
 				status = "error"
 			}
-			RecordCoordinatorResult(coordinatorName, status, time.Since(start).Seconds())
+			classifier := taskState.ClassifierType
+			if classifier == "" {
+				classifier = "unknown"
+			}
+			RecordCoordinatorResult(coordinatorName, classifier, status, time.Since(start).Seconds())
 			metrics.RecordAgentComplexTask(endpoint, status, time.Since(start).Seconds())
 			return &service.ComplexTaskResponse{
 				MessageID: req.MessageID,
@@ -106,7 +112,11 @@ func (a *CoordinatorSupervisorAdapter) ExecuteComplexTask(ctx context.Context, r
 		time.Sleep(delay)
 	}
 
-	RecordCoordinatorResult(coordinatorName, "error", time.Since(start).Seconds())
+	classifier := taskState.ClassifierType
+	if classifier == "" {
+		classifier = "unknown"
+	}
+	RecordCoordinatorResult(coordinatorName, classifier, "error", time.Since(start).Seconds())
 	metrics.RecordAgentComplexTask(endpoint, "error", time.Since(start).Seconds())
 	return &service.ComplexTaskResponse{
 		MessageID: req.MessageID,

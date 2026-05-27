@@ -473,3 +473,86 @@ func (s *PostgresVectorStore) GetUserPreferences(ctx context.Context, userID str
 	}
 	return memory.Preferences, nil
 }
+
+// BatchAddInsights 批量添加洞察，用于会话结束时的记忆沉淀
+func (s *PostgresVectorStore) BatchAddInsights(ctx context.Context, userID string, insights []*Insight) error {
+	if len(insights) == 0 {
+		return nil
+	}
+
+	// 批量处理向量嵌入和向量存储
+	var records []vectorstore.Record
+	for _, insight := range insights {
+		insight.UserID = userID
+		if insight.InsightID == "" {
+			insight.InsightID = fmt.Sprintf("insight-%d", time.Now().UnixNano())
+		}
+		insight.CreatedAt = time.Now()
+
+		// 生成向量嵌入
+		if s.embedder != nil && insight.Content != "" {
+			vector, err := s.embedder.EmbedDocuments(ctx, []string{insight.Content})
+			if err == nil && len(vector) > 0 {
+				insight.Vector = vector[0]
+				if s.vectorStore != nil {
+					records = append(records, vectorstore.Record{
+						ID:      insight.InsightID,
+						Content: insight.Content,
+						Vector:  insight.Vector,
+						Metadata: map[string]string{
+							"user_id":         userID,
+							"conversation_id": insight.ConversationID,
+							"entities":        strings.Join(insight.Entities, ","),
+						},
+					})
+				}
+			}
+		}
+	}
+
+	// 批量写入向量存储
+	if len(records) > 0 && s.vectorStore != nil {
+		if err := s.vectorStore.Upsert(ctx, records); err != nil {
+			return fmt.Errorf("upsert vectors: %w", err)
+		}
+	}
+
+	// 批量写入数据库
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin transaction: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	for _, insight := range insights {
+		entities := insight.Entities
+		if entities == nil {
+			entities = []string{}
+		}
+		_, err := tx.Exec(ctx, fmt.Sprintf(`
+			INSERT INTO %s (insight_id, user_id, conversation_id, content, summary, entities, created_at, recall_count)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+			ON CONFLICT (insight_id) DO UPDATE SET
+				content = $4,
+				summary = $5,
+				entities = $6
+		`, InsightTable),
+			insight.InsightID,
+			insight.UserID,
+			insight.ConversationID,
+			insight.Content,
+			insight.Summary,
+			entities,
+			insight.CreatedAt.Unix(),
+			0)
+		if err != nil {
+			return fmt.Errorf("insert insight: %w", err)
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit transaction: %w", err)
+	}
+
+	return nil
+}

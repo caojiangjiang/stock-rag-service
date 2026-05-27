@@ -19,7 +19,7 @@ import (
 //
 // 当前项目存在两套 Agent 抽象体系：
 // 【自定义抽象】（此文件）
-//   - Agent、Tool、Runner、AgentMode
+//   - Agent、Tool、Runner、CoordinatorType
 // 【Eino 原生抽象】（推荐使用）
 //   - adk.Agent、tool.BaseTool、model.ChatModel、compose.Workflow
 //
@@ -79,7 +79,7 @@ type Agent struct {
 	StepTraces   []StepTrace
 	ToolFailures map[string]int
 	TaskContext  *pkgctx.TaskContext
-	Mode         AgentMode
+	Mode         CoordinatorType
 	Tracer       Tracer
 	mutex        sync.RWMutex
 }

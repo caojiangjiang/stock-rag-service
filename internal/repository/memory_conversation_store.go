@@ -111,6 +111,7 @@ func (m *MemoryConversationStore) SaveMessage(ctx context.Context, message *Mess
 	if _, ok := m.messages[message.ConversationID]; !ok {
 		m.messages[message.ConversationID] = []*Message{}
 	}
+	ApplyCoordinatorMetadata(message)
 	m.messages[message.ConversationID] = append(m.messages[message.ConversationID], message)
 
 	now := time.Now().Unix()
@@ -140,13 +141,14 @@ func (m *MemoryConversationStore) GetMessages(ctx context.Context, conversationI
 	for i := 0; i < limit; i++ {
 		msg := msgs[start+i]
 		result[i] = &Message{
-			ID:             msg.ID,
-			ConversationID: msg.ConversationID,
-			Role:           msg.Role,
-			Content:        msg.Content,
-			RouteMode:      msg.RouteMode,
-			Metadata:       copyMap(msg.Metadata),
-			CreatedAt:      msg.CreatedAt,
+			ID:              msg.ID,
+			ConversationID:  msg.ConversationID,
+			Role:            msg.Role,
+			Content:         msg.Content,
+			RouteMode:       msg.RouteMode,
+			CoordinatorType: CoordinatorTypeFromMessage(msg),
+			Metadata:        copyMap(msg.Metadata),
+			CreatedAt:       msg.CreatedAt,
 		}
 	}
 	return result, nil
@@ -183,13 +185,14 @@ func (m *MemoryConversationStore) GetMessagesByConversationID(ctx context.Contex
 	for i := offset; i < end; i++ {
 		msg := msgs[i]
 		result[i-offset] = &Message{
-			ID:             msg.ID,
-			ConversationID: msg.ConversationID,
-			Role:           msg.Role,
-			Content:        msg.Content,
-			RouteMode:      msg.RouteMode,
-			Metadata:       copyMap(msg.Metadata),
-			CreatedAt:      msg.CreatedAt,
+			ID:              msg.ID,
+			ConversationID:  msg.ConversationID,
+			Role:            msg.Role,
+			Content:         msg.Content,
+			RouteMode:       msg.RouteMode,
+			CoordinatorType: CoordinatorTypeFromMessage(msg),
+			Metadata:        copyMap(msg.Metadata),
+			CreatedAt:       msg.CreatedAt,
 		}
 	}
 	return result, nil
@@ -306,6 +309,24 @@ func (m *MemoryConversationStore) GetLastRouteMode(ctx context.Context, conversa
 	for i := len(messages) - 1; i >= 0; i-- {
 		if messages[i].RouteMode != "" {
 			return messages[i].RouteMode, nil
+		}
+	}
+
+	return "", ErrNotFound
+}
+
+func (m *MemoryConversationStore) GetLastCoordinator(ctx context.Context, conversationID string) (string, error) {
+	m.mutex.RLock()
+	defer m.mutex.RUnlock()
+
+	messages, ok := m.messages[conversationID]
+	if !ok || len(messages) == 0 {
+		return "", ErrNotFound
+	}
+
+	for i := len(messages) - 1; i >= 0; i-- {
+		if coord := CoordinatorTypeFromMessage(messages[i]); coord != "" {
+			return coord, nil
 		}
 	}
 

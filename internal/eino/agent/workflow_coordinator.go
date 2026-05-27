@@ -15,8 +15,8 @@ type WorkflowCoordinator struct {
 	*BaseCoordinator
 }
 
-func NewWorkflowCoordinator(profileRegistry *ProfileRegistry) *WorkflowCoordinator {
-	base := NewBaseCoordinator("workflow", profileRegistry, nil)
+func NewWorkflowCoordinator(profileRegistry *ProfileRegistry, agentBuilder *AgentBuilder) *WorkflowCoordinator {
+	base := NewBaseCoordinator("workflow", profileRegistry, agentBuilder)
 	return &WorkflowCoordinator{
 		BaseCoordinator: base,
 	}
@@ -42,7 +42,11 @@ func (c *WorkflowCoordinator) Execute(ctx context.Context, taskState *TaskState)
 		if taskState.Status == TaskStatusFailed {
 			status = "error"
 		}
-		RecordCoordinatorResult(c.Name(), status, time.Since(coordinatorStart).Seconds())
+		classifier := taskState.ClassifierType
+		if classifier == "" {
+			classifier = "unknown"
+		}
+		RecordCoordinatorResult(c.Name(), classifier, status, time.Since(coordinatorStart).Seconds())
 	}()
 
 	runCtx, cancel := rt.DeriveContext(ctx)

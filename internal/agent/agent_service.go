@@ -8,6 +8,7 @@ import (
 
 	"go.opentelemetry.io/otel/attribute"
 
+	einoagent "stock_rag/internal/eino/agent"
 	"stock_rag/internal/cache"
 	"stock_rag/internal/memory"
 	"stock_rag/internal/memory/medium"
@@ -23,26 +24,29 @@ const (
 )
 
 type ChatService struct {
-	routeEngine    *router.RouteEngine
-	executor       *AgentExecutor
-	conversation repository.UnifiedConversationStore
-	exactCache     *cache.ExactCache // 精确缓存（原始问题MD5匹配）
-	mem            memory.Memory     // 短/中/长期记忆
+	routeEngine         *router.RouteEngine
+	coordinatorSelector *einoagent.CoordinatorSelector
+	executor            *AgentExecutor
+	conversation        repository.UnifiedConversationStore
+	exactCache          *cache.ExactCache // 精确缓存（原始问题MD5匹配）
+	mem                 memory.Memory     // 短/中/长期记忆
 }
 
 func NewChatService(
 	routeEngine *router.RouteEngine,
+	coordinatorSelector *einoagent.CoordinatorSelector,
 	executor *AgentExecutor,
 	conversation repository.UnifiedConversationStore,
 	exactCache *cache.ExactCache,
 	mem memory.Memory,
 ) *ChatService {
 	return &ChatService{
-		routeEngine:  routeEngine,
-		executor:     executor,
-		conversation: conversation,
-		exactCache:   exactCache,
-		mem:          mem,
+		routeEngine:         routeEngine,
+		coordinatorSelector: coordinatorSelector,
+		executor:            executor,
+		conversation:        conversation,
+		exactCache:          exactCache,
+		mem:                 mem,
 	}
 }
 
@@ -290,14 +294,32 @@ func (s *ChatService) chat(ctx context.Context, req *ChatRequest, onChunk func(s
 	}
 
 	executeReq := &ExecuteRequest{
-		ConversationID: convID,
-		MessageID:      userMsg.ID,
-		UserID:         req.UserID,
-		UserMessage:    req.Message,
-		Mode:           routeDecision.SelectedMode,
-		StockCode:      req.StockCode,
-		DocType:        req.DocType,
-		TimeRange:      req.TimeRange,
+		ConversationID:  convID,
+		MessageID:       userMsg.ID,
+		UserID:          req.UserID,
+		UserMessage:     req.Message,
+		Mode:            routeDecision.SelectedMode,
+		RouteConfidence: routeDecision.Confidence,
+		RouteReason:     routeDecision.Reason,
+		StockCode:       req.StockCode,
+		DocType:         req.DocType,
+		TimeRange:       req.TimeRange,
+	}
+	if routeDecision.SelectedMode == router.ModeAgent {
+		coordType, coordReason, err := s.selectCoordinator(ctx, convID, req, routeDecision, recentMessages, summary)
+		if err != nil {
+			observability.L().ErrorCtx(ctx, "Coordinator selection failed", err)
+			return &ChatResponse{
+				ConversationID: convID,
+				Error:          "协调器选择失败: " + err.Error(),
+			}, err
+		}
+		executeReq.CoordinatorType = string(coordType)
+		observability.L().InfoCtx(ctx, "Coordinator selected",
+			"type", string(coordType),
+			"reason", coordReason,
+		)
+		span.SetAttributes(attribute.String("chat.coordinator_type", string(coordType)))
 	}
 	if onChunk != nil && routeDecision.SelectedMode != router.ModeAgent {
 		executeReq.OnChunk = onChunk
@@ -367,6 +389,10 @@ func (s *ChatService) chat(ctx context.Context, req *ChatRequest, onChunk func(s
 		assistantMsg.ID = executeResp.MessageID
 	}
 	assistantMsg.RouteMode = string(routeDecision.SelectedMode)
+	if routeDecision.SelectedMode == router.ModeAgent && executeReq.CoordinatorType != "" {
+		assistantMsg.CoordinatorType = executeReq.CoordinatorType
+		repository.ApplyCoordinatorMetadata(assistantMsg)
+	}
 	if err := s.conversation.SaveMessage(ctx, assistantMsg); err != nil {
 		observability.L().ErrorCtx(ctx, "Failed to save assistant message", err)
 		return &ChatResponse{
@@ -411,10 +437,11 @@ func (s *ChatService) getRecentMessages(ctx context.Context, convID string, coun
 	result := make([]router.MessageContext, 0, len(messages))
 	for _, msg := range messages {
 		result = append(result, router.MessageContext{
-			Role:      msg.Role,
-			Content:   msg.Content,
-			RouteMode: router.RouteMode(msg.RouteMode),
-			CreatedAt: time.Unix(msg.CreatedAt, 0),
+			Role:            msg.Role,
+			Content:         msg.Content,
+			RouteMode:       router.RouteMode(msg.RouteMode),
+			CoordinatorType: repository.CoordinatorTypeFromMessage(msg),
+			CreatedAt:       time.Unix(msg.CreatedAt, 0),
 		})
 	}
 	return result, nil
@@ -479,6 +506,65 @@ func deriveLastRouteMode(messages []router.MessageContext) router.RouteMode {
 	for i := len(messages) - 1; i >= 0; i-- {
 		if messages[i].RouteMode != "" {
 			return messages[i].RouteMode
+		}
+	}
+	return ""
+}
+
+func (s *ChatService) selectCoordinator(
+	ctx context.Context,
+	convID string,
+	req *ChatRequest,
+	routeDecision *router.RouteDecision,
+	recentMessages []router.MessageContext,
+	summary string,
+) (einoagent.CoordinatorType, string, error) {
+	if s.coordinatorSelector == nil {
+		return einoagent.CoordinatorTypeSupervisor, "coordinator selector not configured", nil
+	}
+
+	lastCoordinator := deriveLastCoordinator(recentMessages)
+	if lastCoordinator == "" {
+		lastCoordinator = s.getLastCoordinator(ctx, convID)
+	}
+
+	selectInput := &einoagent.CoordinatorSelectInput{
+		MessageID:           routeDecision.MessageID,
+		ConversationID:      convID,
+		CurrentMessage:      req.Message,
+		RecentMessages:      recentMessages,
+		Summary:             summary,
+		RouteMode:           routeDecision.SelectedMode,
+		RouteConfidence:     routeDecision.Confidence,
+		RouteReason:         routeDecision.Reason,
+		ExplicitCoordinator: ExplicitCoordinatorFromEnv(),
+		LastCoordinator:     lastCoordinator,
+		StockCode:           req.StockCode,
+		DocType:             req.DocType,
+	}
+
+	decision, err := s.coordinatorSelector.Select(ctx, selectInput)
+	if err != nil {
+		return "", "", err
+	}
+	return decision.SelectedType, decision.Reason, nil
+}
+
+func (s *ChatService) getLastCoordinator(ctx context.Context, convID string) einoagent.CoordinatorType {
+	if convID == "" {
+		return ""
+	}
+	coord, err := s.conversation.GetLastCoordinator(ctx, convID)
+	if err != nil || coord == "" {
+		return ""
+	}
+	return einoagent.CoordinatorType(coord)
+}
+
+func deriveLastCoordinator(messages []router.MessageContext) einoagent.CoordinatorType {
+	for i := len(messages) - 1; i >= 0; i-- {
+		if messages[i].CoordinatorType != "" {
+			return einoagent.CoordinatorType(messages[i].CoordinatorType)
 		}
 	}
 	return ""

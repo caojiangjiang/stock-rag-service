@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"time"
-
-	"stock_rag/internal/eino/tools"
 )
 
 // DebateCoordinator 辩论模式协调器
@@ -16,8 +14,8 @@ type DebateCoordinator struct {
 }
 
 // NewDebateCoordinator 创建辩论协调器
-func NewDebateCoordinator(profileRegistry *ProfileRegistry, toolRegistry *tools.ToolRegistry) *DebateCoordinator {
-	base := NewBaseCoordinator("debate", profileRegistry, toolRegistry)
+func NewDebateCoordinator(profileRegistry *ProfileRegistry, agentBuilder *AgentBuilder) *DebateCoordinator {
+	base := NewBaseCoordinator("debate", profileRegistry, agentBuilder)
 	return &DebateCoordinator{
 		BaseCoordinator: base,
 		maxRounds:       3,

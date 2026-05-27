@@ -37,11 +37,13 @@ func (e *ModeAgentExecutor) Execute(ctx context.Context, req *ExecuteRequest) (*
 	observability.L().InfoCtx(ctx, "ModeAgentExecutor starting execution for ModeAgent")
 
 	taskReq := &service.ComplexTaskRequest{
-		ConversationID: req.ConversationID,
-		MessageID:      req.MessageID,
-		UserID:         req.UserID,
-		UserMessage:    req.UserMessage,
-		StockCode:      req.StockCode,
+		ConversationID:  req.ConversationID,
+		MessageID:       req.MessageID,
+		UserID:          req.UserID,
+		UserMessage:     req.UserMessage,
+		StockCode:       req.StockCode,
+		CoordinatorType: req.CoordinatorType,
+		OnChunk:         req.OnChunk, // 透传流式回调
 	}
 
 	resp, err := e.taskAgentService.ExecuteComplexTask(ctx, taskReq)

@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"sync"
 	"time"
-
-	"stock_rag/internal/eino/tools"
 )
 
 // PeerCoordinator 并行协作协调器
@@ -16,8 +14,8 @@ type PeerCoordinator struct {
 }
 
 // NewPeerCoordinator 创建并行协调器
-func NewPeerCoordinator(profileRegistry *ProfileRegistry, toolRegistry *tools.ToolRegistry) *PeerCoordinator {
-	base := NewBaseCoordinator("peer", profileRegistry, toolRegistry)
+func NewPeerCoordinator(profileRegistry *ProfileRegistry, agentBuilder *AgentBuilder) *PeerCoordinator {
+	base := NewBaseCoordinator("peer", profileRegistry, agentBuilder)
 	return &PeerCoordinator{
 		BaseCoordinator: base,
 	}

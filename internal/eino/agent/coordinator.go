@@ -30,14 +30,12 @@ const (
 type CoordinatorFactory struct {
 	profileRegistry *ProfileRegistry
 	agentBuilder    *AgentBuilder
-	toolRegistry    *tools.ToolRegistry
 }
 
-func NewCoordinatorFactory(profileRegistry *ProfileRegistry, agentBuilder *AgentBuilder, toolRegistry *tools.ToolRegistry) *CoordinatorFactory {
+func NewCoordinatorFactory(profileRegistry *ProfileRegistry, agentBuilder *AgentBuilder) *CoordinatorFactory {
 	return &CoordinatorFactory{
 		profileRegistry: profileRegistry,
 		agentBuilder:    agentBuilder,
-		toolRegistry:    toolRegistry,
 	}
 }
 
@@ -48,15 +46,15 @@ func (f *CoordinatorFactory) Create(coordinatorType CoordinatorType) (Coordinato
 	case CoordinatorTypePipeline:
 		return NewPipelineCoordinator(f.profileRegistry, f.agentBuilder), nil
 	case CoordinatorTypeWorkflow:
-		return NewWorkflowCoordinator(f.profileRegistry), nil
+		return NewWorkflowCoordinator(f.profileRegistry, f.agentBuilder), nil
 	case CoordinatorTypePlan:
 		return NewPlanCoordinator(f.profileRegistry, f.agentBuilder), nil
 	case CoordinatorTypePeer:
-		return NewPeerCoordinator(f.profileRegistry, f.toolRegistry), nil
+		return NewPeerCoordinator(f.profileRegistry, f.agentBuilder), nil
 	case CoordinatorTypeDebate:
-		return NewDebateCoordinator(f.profileRegistry, f.toolRegistry), nil
+		return NewDebateCoordinator(f.profileRegistry, f.agentBuilder), nil
 	case CoordinatorTypeCommittee:
-		return NewCommitteeCoordinator(f.profileRegistry, f.toolRegistry), nil
+		return NewCommitteeCoordinator(f.profileRegistry, f.agentBuilder), nil
 	case CoordinatorTypeDeep:
 		return NewDeepCoordinator(f.profileRegistry, f.agentBuilder), nil
 	default:
@@ -68,15 +66,15 @@ type BaseCoordinator struct {
 	name            string
 	profiles        []*AgentProfile
 	profileRegistry *ProfileRegistry
-	toolRegistry    *tools.ToolRegistry
+	agentBuilder    *AgentBuilder
 }
 
-func NewBaseCoordinator(name string, profileRegistry *ProfileRegistry, toolRegistry *tools.ToolRegistry) *BaseCoordinator {
+func NewBaseCoordinator(name string, profileRegistry *ProfileRegistry, agentBuilder *AgentBuilder) *BaseCoordinator {
 	return &BaseCoordinator{
 		name:            name,
 		profiles:        make([]*AgentProfile, 0),
 		profileRegistry: profileRegistry,
-		toolRegistry:    toolRegistry,
+		agentBuilder:    agentBuilder,
 	}
 }
 
@@ -101,10 +99,14 @@ func (c *BaseCoordinator) GetProfileByName(name string) *AgentProfile {
 }
 
 func (c *BaseCoordinator) GetToolInstance(toolName string) (tools.Tool, error) {
-	if c.toolRegistry == nil {
+	if c.agentBuilder == nil {
+		return nil, fmt.Errorf("agent builder not set")
+	}
+	registry := c.agentBuilder.GetToolRegistry()
+	if registry == nil {
 		return nil, fmt.Errorf("tool registry not set")
 	}
-	toolInfo, err := c.toolRegistry.GetInfo(toolName)
+	toolInfo, err := registry.GetInfo(toolName)
 	if err != nil {
 		return nil, err
 	}
@@ -113,10 +115,14 @@ func (c *BaseCoordinator) GetToolInstance(toolName string) (tools.Tool, error) {
 
 // InvokeTool 通过 ToolRegistry 统一调用（超时 / 重试 / 熔断）。
 func (c *BaseCoordinator) InvokeTool(ctx context.Context, toolName string, params map[string]interface{}) (string, error) {
-	if c.toolRegistry == nil {
+	if c.agentBuilder == nil {
+		return "", fmt.Errorf("agent builder not set")
+	}
+	registry := c.agentBuilder.GetToolRegistry()
+	if registry == nil {
 		return "", fmt.Errorf("tool registry not set")
 	}
-	return c.toolRegistry.Invoke(ctx, toolName, params)
+	return registry.Invoke(ctx, toolName, params)
 }
 
 // ToolParamsFromTask 从任务状态构造通用工具参数。

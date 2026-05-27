@@ -20,7 +20,7 @@ type SupervisorCoordinator struct {
 }
 
 func NewSupervisorCoordinator(profileRegistry *ProfileRegistry, agentBuilder *AgentBuilder) *SupervisorCoordinator {
-	base := NewBaseCoordinator("supervisor", profileRegistry, nil)
+	base := NewBaseCoordinator("supervisor", profileRegistry, agentBuilder)
 	return &SupervisorCoordinator{
 		BaseCoordinator:   base,
 		supervisorProfile: TaskPlannerProfile,
@@ -54,7 +54,11 @@ func (c *SupervisorCoordinator) Execute(ctx context.Context, taskState *TaskStat
 		if taskState.Status == TaskStatusFailed {
 			status = "error"
 		}
-		RecordCoordinatorResult(c.Name(), status, time.Since(coordinatorStart).Seconds())
+		classifier := taskState.ClassifierType
+		if classifier == "" {
+			classifier = "unknown"
+		}
+		RecordCoordinatorResult(c.Name(), classifier, status, time.Since(coordinatorStart).Seconds())
 	}()
 
 	runCtx, cancel := rt.DeriveContext(ctx)
@@ -93,6 +97,7 @@ func (c *SupervisorCoordinator) Execute(ctx context.Context, taskState *TaskStat
 		userContent += fmt.Sprintf("\n\n股票代码: %s", taskState.StockCode)
 	}
 
+	// 根据是否有 OnChunk 回调决定是否启用流式
 	input := &adk.AgentInput{
 		Messages: []adk.Message{
 			{
@@ -100,7 +105,7 @@ func (c *SupervisorCoordinator) Execute(ctx context.Context, taskState *TaskStat
 				Content: userContent,
 			},
 		},
-		EnableStreaming: false,
+		EnableStreaming: taskState.OnChunk != nil,
 	}
 
 	iterator := sv.Run(runCtx, input)

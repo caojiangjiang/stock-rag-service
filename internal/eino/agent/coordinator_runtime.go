@@ -78,20 +78,32 @@ func (rt *CoordinatorRuntime) RunSubTask(
 	handler := NewRetryHandler(&rt.Strategy)
 	var lastErr error
 	var output string
+	stepIndex := 0
 
 	for handler.ShouldRetry() {
 		attempt := handler.currentRetry + 1
 		start := time.Now()
-		stepCtx, cancel := rt.DeriveContext(ctx)
-		result, err := fn(stepCtx)
+
+		// 为每个步骤创建 span
+		stepCtx, spanEnd := StartCoordinatorStepSpan(ctx, rt.CoordinatorName, subtaskName, stepIndex)
+
+		deriveCtx, cancel := rt.DeriveContext(stepCtx)
+		result, err := fn(deriveCtx)
 		cancel()
 
+		elapsed := time.Since(start).Seconds()
 		status := "success"
+
 		if err != nil {
 			status = "error"
 			lastErr = err
 			rt.recordSubtask(taskState, subtaskName, TaskStatusFailed, "", err.Error(), start)
 			handler.RecordRetry()
+
+			// 记录步骤级 metrics
+			metrics.RecordAgentStep(rt.CoordinatorName, subtaskName, status, elapsed)
+			spanEnd()
+
 			if !handler.ShouldRetry() {
 				break
 			}
@@ -104,12 +116,18 @@ func (rt *CoordinatorRuntime) RunSubTask(
 				"error", err.Error(),
 			)
 			time.Sleep(delay)
+			stepIndex++
 			continue
 		}
 
 		output = result
 		rt.recordSubtask(taskState, subtaskName, TaskStatusCompleted, result, "", start)
-		metrics.RecordAgentSubtask(rt.CoordinatorName, subtaskName, status, time.Since(start).Seconds())
+
+		// 记录步骤级 metrics
+		metrics.RecordAgentStep(rt.CoordinatorName, subtaskName, status, elapsed)
+		spanEnd()
+
+		metrics.RecordAgentSubtask(rt.CoordinatorName, subtaskName, status, elapsed)
 		return output, nil
 	}
 
@@ -138,7 +156,12 @@ func (rt *CoordinatorRuntime) recordSubtask(
 	}
 	trace.LatencyMS = trace.EndTime.Sub(trace.StartTime).Milliseconds()
 	taskState.AddStepTrace(trace)
-	metrics.RecordAgentStep(time.Since(start).Seconds())
+	// 记录步骤级指标
+	statusStr := "success"
+	if status == TaskStatusFailed {
+		statusStr = "error"
+	}
+	metrics.RecordAgentStep(rt.CoordinatorName, subtaskName, statusStr, time.Since(start).Seconds())
 }
 
 // ProcessADKIterator 统一处理 ADK 事件流，记录子 Agent 步骤与指标。
@@ -174,6 +197,13 @@ func (rt *CoordinatorRuntime) ProcessADKIterator(
 			}
 			content := msg.Content
 			finalResult += content
+
+			// 如果有流式回调，立即推送内容
+			if taskState.OnChunk != nil && content != "" {
+				if err := taskState.OnChunk(content); err != nil {
+					return finalResult, err
+				}
+			}
 
 			agentName := eventAgentName(event)
 			start := time.Now()
@@ -212,8 +242,21 @@ func EnrichTaskState(taskState *TaskState, stockCode string) {
 }
 
 // RecordCoordinatorResult 记录协调器整体执行结果指标。
-func RecordCoordinatorResult(coordinator, status string, seconds float64) {
-	metrics.RecordAgentCoordinator(coordinator, status, seconds)
+func RecordCoordinatorResult(coordinator, classifier, status string, seconds float64) {
+	metrics.RecordAgentCoordinator(coordinator, classifier, status, seconds)
+}
+
+// StartCoordinatorStepSpan 为协调器内的单个步骤创建 span。
+func StartCoordinatorStepSpan(ctx context.Context, coordinator, stepName string, stepIndex int) (context.Context, func()) {
+	ctx, span := observability.StartSpan(ctx, fmt.Sprintf("%s.step.%s", coordinator, stepName))
+	span.SetAttributes(
+		attribute.String("coordinator.name", coordinator),
+		attribute.String("step.name", stepName),
+		attribute.Int("step.index", stepIndex),
+	)
+	return ctx, func() {
+		span.End()
+	}
 }
 
 // StartCoordinatorSpan 为协调器执行添加 span 属性。

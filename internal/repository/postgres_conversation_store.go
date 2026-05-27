@@ -193,6 +193,8 @@ func (p *PostgresConversationStore) SaveMessage(ctx context.Context, message *Me
 		message.CreatedAt = now
 	}
 
+	ApplyCoordinatorMetadata(message)
+
 	metadataJSON, err := json.Marshal(message.Metadata)
 	if err != nil {
 		return err
@@ -437,6 +439,30 @@ func (p *PostgresConversationStore) GetLastRouteMode(ctx context.Context, conver
 		return "", ErrNotFound
 	}
 	return routeMode, nil
+}
+
+func (p *PostgresConversationStore) GetLastCoordinator(ctx context.Context, conversationID string) (string, error) {
+	row := p.db.QueryRow(ctx, `
+		SELECT metadata->>'coordinator_type'
+		FROM messages
+		WHERE conversation_id = $1
+		  AND metadata->>'coordinator_type' IS NOT NULL
+		  AND metadata->>'coordinator_type' <> ''
+		ORDER BY created_at DESC
+		LIMIT 1
+	`, conversationID)
+
+	var coordinatorType string
+	if err := row.Scan(&coordinatorType); err != nil {
+		if err == pgx.ErrNoRows {
+			return "", ErrNotFound
+		}
+		return "", err
+	}
+	if coordinatorType == "" {
+		return "", ErrNotFound
+	}
+	return coordinatorType, nil
 }
 
 func (p *PostgresConversationStore) Close() {

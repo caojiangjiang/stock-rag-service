@@ -48,23 +48,23 @@ type MetricItem struct {
 }
 
 type StepTrace struct {
-	StepID      string                 `json:"step_id"`
-	ToolName    string                 `json:"tool_name"`
-	Input       map[string]interface{} `json:"input"`
-	Output      string                 `json:"output"`
-	Error       string                 `json:"error,omitempty"`
-	StartTime   time.Time              `json:"start_time"`
-	EndTime     time.Time              `json:"end_time"`
-	Status      TaskStatus             `json:"status"`
-	Confidence  float64                `json:"confidence"`
+	StepID     string                 `json:"step_id"`
+	ToolName   string                 `json:"tool_name"`
+	Input      map[string]interface{} `json:"input"`
+	Output     string                 `json:"output"`
+	Error      string                 `json:"error,omitempty"`
+	StartTime  time.Time              `json:"start_time"`
+	EndTime    time.Time              `json:"end_time"`
+	Status     TaskStatus             `json:"status"`
+	Confidence float64                `json:"confidence"`
 	// 可观测性字段
-	TraceID     string  `json:"trace_id,omitempty"`
-	SpanID      string  `json:"span_id,omitempty"`
-	LatencyMS   int64   `json:"latency_ms,omitempty"`
-	TokenIn     int     `json:"token_in,omitempty"`
-	TokenOut    int     `json:"token_out,omitempty"`
-	CostUSD     float64 `json:"cost_usd,omitempty"`
-	ModelVersion string `json:"model_version,omitempty"`
+	TraceID      string  `json:"trace_id,omitempty"`
+	SpanID       string  `json:"span_id,omitempty"`
+	LatencyMS    int64   `json:"latency_ms,omitempty"`
+	TokenIn      int     `json:"token_in,omitempty"`
+	TokenOut     int     `json:"token_out,omitempty"`
+	CostUSD      float64 `json:"cost_usd,omitempty"`
+	ModelVersion string  `json:"model_version,omitempty"`
 }
 
 type Citation struct {
@@ -77,31 +77,33 @@ type Citation struct {
 }
 
 type TaskState struct {
-	ConversationID       string         `json:"conversation_id"`
-	MessageID            string         `json:"message_id"`
-	UserID               string         `json:"user_id"`
-	UserMessage          string         `json:"user_message"`
-	StockCode            string         `json:"stock_code"`
-	CompanyName          string         `json:"company_name"`
-	TimeRange            string         `json:"time_range"`
-	DocTypes             []string       `json:"doc_types"`
-	Plan                 *ExecutionPlan `json:"plan,omitempty"`
-	SelectedTools        []string       `json:"selected_tools"`
-	EvidenceSet          []EvidenceItem `json:"evidence_set"`
-	MetricTable          []MetricItem   `json:"metric_table"`
-	IntermediateFindings []string       `json:"intermediate_findings"`
-	Summary              string         `json:"summary"`
-	Citations            []Citation     `json:"citations"`
-	StepTraces           []StepTrace    `json:"step_traces"`
-	Errors               []string       `json:"errors"`
-	Status               TaskStatus     `json:"status"`
-	CurrentStep          int            `json:"current_step"`
-	NeedReplan           bool           `json:"need_replan"`
-	RetryCount           int            `json:"retry_count"`
-	CheckPointID         string         `json:"check_point_id,omitempty"`
-	LastCheckPointStep   string         `json:"last_check_point_step,omitempty"`
-	CreatedAt            time.Time      `json:"created_at"`
-	UpdatedAt            time.Time      `json:"updated_at"`
+	ConversationID       string             `json:"conversation_id"`
+	MessageID            string             `json:"message_id"`
+	UserID               string             `json:"user_id"`
+	UserMessage          string             `json:"user_message"`
+	ClassifierType       string             `json:"classifier_type"`
+	StockCode            string             `json:"stock_code"`
+	CompanyName          string             `json:"company_name"`
+	TimeRange            string             `json:"time_range"`
+	DocTypes             []string           `json:"doc_types"`
+	Plan                 *ExecutionPlan     `json:"plan,omitempty"`
+	SelectedTools        []string           `json:"selected_tools"`
+	EvidenceSet          []EvidenceItem     `json:"evidence_set"`
+	MetricTable          []MetricItem       `json:"metric_table"`
+	IntermediateFindings []string           `json:"intermediate_findings"`
+	Summary              string             `json:"summary"`
+	Citations            []Citation         `json:"citations"`
+	StepTraces           []StepTrace        `json:"step_traces"`
+	Errors               []string           `json:"errors"`
+	Status               TaskStatus         `json:"status"`
+	CurrentStep          int                `json:"current_step"`
+	NeedReplan           bool               `json:"need_replan"`
+	RetryCount           int                `json:"retry_count"`
+	CheckPointID         string             `json:"check_point_id,omitempty"`
+	LastCheckPointStep   string             `json:"last_check_point_step,omitempty"`
+	CreatedAt            time.Time          `json:"created_at"`
+	UpdatedAt            time.Time          `json:"updated_at"`
+	OnChunk              func(string) error // SSE 流式回调
 }
 
 func NewTaskState(conversationID, messageID, userID, userMessage string) *TaskState {

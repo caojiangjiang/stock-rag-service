@@ -21,7 +21,7 @@ type DeepCoordinator struct {
 }
 
 func NewDeepCoordinator(profileRegistry *ProfileRegistry, agentBuilder *AgentBuilder) *DeepCoordinator {
-	base := NewBaseCoordinator("deep", profileRegistry, nil)
+	base := NewBaseCoordinator("deep", profileRegistry, agentBuilder)
 	return &DeepCoordinator{
 		BaseCoordinator:   base,
 		supervisorProfile: TaskPlannerProfile,

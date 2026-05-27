@@ -15,42 +15,32 @@ import (
 )
 
 // Deprecated: agent_modes.go 已废弃，建议使用 Coordinator 体系或 Eino 原生 ADK 抽象
-// 此文件中的 AgentMode 模式定义与 Eino 原生 compose.Workflow 重复
-//
-// 当前项目存在两套 Agent 模式体系：
-// 【自定义模式】（此文件）
-//   - ModeReAct、ModePlanAndExecute、ModeMultiAgent、ModePeerAgent、ModeHybridAgent
-// 【Eino 原生模式】（推荐使用）
-//   - compose.Workflow、adk.Agent 组合
+// 此文件已统一到 Coordinator 体系，以下为兼容性别名
 //
 // 建议迁移到：
 //   - Coordinator 接口 (coordinator.go)
-//   - SupervisorCoordinator（多Agent协调）
-//   - PlanCoordinator（计划执行）
-//   - PipelineCoordinator（管道执行）
-//   - ToolRegistry 中的工具注册
+//   - CoordinatorType 类型定义
+//   - CoordinatorFactory 创建协调器
 
-// AgentMode Agent 模式（legacy）
-type AgentMode string
-
+// 兼容性别名：将旧的 AgentMode 映射到 CoordinatorType
 const (
-	// ModeReAct ReAct 模式（legacy）
-	ModeReAct AgentMode = "react"
-	// ModePlanAndExecute Plan-and-Execute 模式（legacy）
-	ModePlanAndExecute AgentMode = "plan_and_execute"
-	// ModeMultiAgent 多 Agent 模式（legacy）
-	ModeMultiAgent AgentMode = "multi_agent"
-	// ModeEinoMultiAgent 使用 Eino ADK 的多 Agent 模式（legacy）
-	ModeEinoMultiAgent AgentMode = "eino_multi_agent"
-	// ModePeerAgent 对等模式（legacy）
-	ModePeerAgent AgentMode = "peer_agent"
-	// ModeHybridAgent 混合模式（legacy）
-	ModeHybridAgent AgentMode = "hybrid_agent"
+	// ModeReAct ReAct 模式（legacy）- 映射到 Supervisor
+	ModeReAct CoordinatorType = CoordinatorTypeSupervisor
+	// ModePlanAndExecute Plan-and-Execute 模式（legacy）- 映射到 Plan
+	ModePlanAndExecute CoordinatorType = CoordinatorTypePlan
+	// ModeMultiAgent 多 Agent 模式（legacy）- 映射到 Committee
+	ModeMultiAgent CoordinatorType = CoordinatorTypeCommittee
+	// ModeEinoMultiAgent 使用 Eino ADK 的多 Agent 模式（legacy）- 映射到 Supervisor
+	ModeEinoMultiAgent CoordinatorType = CoordinatorTypeSupervisor
+	// ModePeerAgent 对等模式（legacy）- 映射到 Peer
+	ModePeerAgent CoordinatorType = CoordinatorTypePeer
+	// ModeHybridAgent 混合模式（legacy）- 映射到 Deep
+	ModeHybridAgent CoordinatorType = CoordinatorTypeDeep
 )
 
-// AgentModeConfig 模式配置
+// AgentModeConfig 模式配置（legacy）
 type AgentModeConfig struct {
-	Mode        AgentMode
+	Mode        CoordinatorType
 	MaxSteps    int
 	Temperature float64
 }
@@ -464,13 +454,13 @@ func (a *MultiAgent) coordinateExperts(ctx context.Context, experts []string, su
 				observation := fmt.Sprintf("专家 %s 不存在", name)
 				mu.Lock()
 				a.appendStepTrace(StepTrace{
-					StepID:      fmt.Sprintf("%d", idx + 1),
-					ToolName:    fmt.Sprintf("expert:%s", name),
-					Input:       map[string]interface{}{"task": subtasks[name]},
-					Output:      observation,
-					EndTime:     time.Now(),
-					Status:      TaskStatusFailed,
-					StartTime:   stepStart,
+					StepID:    fmt.Sprintf("%d", idx+1),
+					ToolName:  fmt.Sprintf("expert:%s", name),
+					Input:     map[string]interface{}{"task": subtasks[name]},
+					Output:    observation,
+					EndTime:   time.Now(),
+					Status:    TaskStatusFailed,
+					StartTime: stepStart,
 				})
 				results[name] = observation
 				mu.Unlock()
@@ -517,13 +507,13 @@ func (a *MultiAgent) coordinateExperts(ctx context.Context, experts []string, su
 				Content: fmt.Sprintf("专家 %s 执行结果: %s", name, result),
 			})
 			a.appendStepTrace(StepTrace{
-				StepID:      fmt.Sprintf("%d", idx + 1),
-				ToolName:    fmt.Sprintf("expert:%s", name),
-				Input:       map[string]interface{}{"task": subtask},
-				Output:      result,
-				EndTime:     time.Now(),
-				Status:      TaskStatusCompleted,
-				StartTime:   stepStart,
+				StepID:    fmt.Sprintf("%d", idx+1),
+				ToolName:  fmt.Sprintf("expert:%s", name),
+				Input:     map[string]interface{}{"task": subtask},
+				Output:    result,
+				EndTime:   time.Now(),
+				Status:    TaskStatusCompleted,
+				StartTime: stepStart,
 			})
 			results[name] = result
 			mu.Unlock()
@@ -1142,42 +1132,39 @@ func (a *PeerAgent) exchangeResults(ctx context.Context, assignments map[string]
 	return results, firstErr
 }
 
-// NewAgentByMode 根据模式创建 Agent
-func NewAgentByMode(config AgentConfig, mode AgentMode) Runner {
+// NewAgentByMode 根据模式创建 Agent（legacy）
+// 已统一到 Coordinator 体系，此函数仅用于向后兼容
+func NewAgentByMode(config AgentConfig, mode CoordinatorType) Runner {
 	switch mode {
-	case ModeReAct:
+	case CoordinatorTypeSupervisor:
 		return NewAgent(config)
-	case ModePlanAndExecute:
+	case CoordinatorTypePlan:
 		return NewPlanExecuteAgent(config)
-	case ModeMultiAgent:
+	case CoordinatorTypeCommittee:
 		return NewMultiAgent(config)
-	case ModeEinoMultiAgent:
-		return NewEinoMultiAgent(config)
-	case ModePeerAgent:
+	case CoordinatorTypePeer:
 		return NewPeerAgent(config)
-	case ModeHybridAgent:
+	case CoordinatorTypeDeep:
 		return NewHybridAgent(config)
 	default:
 		return NewAgent(config)
 	}
 }
 
-// NewAgentByModeWithContext 根据模式和任务上下文创建 Agent
-// 确保 TaskContext 不会丢失
-func NewAgentByModeWithContext(config AgentConfig, mode AgentMode, taskCtx *pkgctx.TaskContext) Runner {
+// NewAgentByModeWithContext 根据模式和任务上下文创建 Agent（legacy）
+// 已统一到 Coordinator 体系，此函数仅用于向后兼容
+func NewAgentByModeWithContext(config AgentConfig, mode CoordinatorType, taskCtx *pkgctx.TaskContext) Runner {
 	var runner Runner
 	switch mode {
-	case ModeReAct:
+	case CoordinatorTypeSupervisor:
 		runner = NewAgent(config)
-	case ModePlanAndExecute:
+	case CoordinatorTypePlan:
 		runner = NewPlanExecuteAgent(config)
-	case ModeMultiAgent:
+	case CoordinatorTypeCommittee:
 		runner = NewMultiAgent(config)
-	case ModeEinoMultiAgent:
-		runner = NewEinoMultiAgent(config)
-	case ModePeerAgent:
+	case CoordinatorTypePeer:
 		runner = NewPeerAgent(config)
-	case ModeHybridAgent:
+	case CoordinatorTypeDeep:
 		runner = NewHybridAgent(config)
 	default:
 		runner = NewAgent(config)

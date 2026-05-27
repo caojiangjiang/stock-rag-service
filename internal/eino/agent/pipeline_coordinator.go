@@ -17,7 +17,7 @@ type PipelineCoordinator struct {
 }
 
 func NewPipelineCoordinator(profileRegistry *ProfileRegistry, agentBuilder *AgentBuilder) *PipelineCoordinator {
-	base := NewBaseCoordinator("pipeline", profileRegistry, nil)
+	base := NewBaseCoordinator("pipeline", profileRegistry, agentBuilder)
 	return &PipelineCoordinator{
 		BaseCoordinator: base,
 		agentBuilder:    agentBuilder,
@@ -47,7 +47,11 @@ func (c *PipelineCoordinator) Execute(ctx context.Context, taskState *TaskState)
 		if taskState.Status == TaskStatusFailed {
 			status = "error"
 		}
-		RecordCoordinatorResult(c.Name(), status, time.Since(coordinatorStart).Seconds())
+		classifier := taskState.ClassifierType
+		if classifier == "" {
+			classifier = "unknown"
+		}
+		RecordCoordinatorResult(c.Name(), classifier, status, time.Since(coordinatorStart).Seconds())
 	}()
 
 	runCtx, cancel := rt.DeriveContext(ctx)

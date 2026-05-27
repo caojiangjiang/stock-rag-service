@@ -67,10 +67,11 @@ type RouteInput struct {
 }
 
 type MessageContext struct {
-	Role      string
-	Content   string
-	RouteMode RouteMode
-	CreatedAt time.Time
+	Role            string
+	Content         string
+	RouteMode       RouteMode
+	CoordinatorType string
+	CreatedAt       time.Time
 }
 
 type RouteDecision struct {

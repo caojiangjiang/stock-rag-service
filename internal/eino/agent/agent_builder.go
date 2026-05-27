@@ -24,6 +24,11 @@ func NewAgentBuilder(toolRegistry *tools.ToolRegistry) *AgentBuilder {
 	}
 }
 
+// GetToolRegistry 获取工具注册表
+func (b *AgentBuilder) GetToolRegistry() *tools.ToolRegistry {
+	return b.toolRegistry
+}
+
 func (b *AgentBuilder) Build(ctx context.Context, profile *AgentProfile) (adk.Agent, error) {
 	instruction := b.buildInstruction(profile)
 

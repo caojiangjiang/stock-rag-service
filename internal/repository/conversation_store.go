@@ -67,6 +67,12 @@ type RouteModeStore interface {
 	GetLastRouteMode(ctx context.Context, conversationID string) (string, error)
 }
 
+// CoordinatorStore 协调器类型存储（Agent 路径追问粘性）
+type CoordinatorStore interface {
+	// GetLastCoordinator 获取会话最近一次使用的协调器类型
+	GetLastCoordinator(ctx context.Context, conversationID string) (string, error)
+}
+
 // UnifiedConversationStore 统一会话存储接口
 // 组合所有存储接口，提供完整的会话管理能力
 type UnifiedConversationStore interface {
@@ -75,6 +81,7 @@ type UnifiedConversationStore interface {
 	SummaryStore
 	TaskContextStore
 	RouteModeStore
+	CoordinatorStore
 }
 
 // Conversation 会话元数据
@@ -95,9 +102,38 @@ type Message struct {
 	UserID         string                 `json:"user_id"`
 	Role           string                 `json:"role"`
 	Content        string                 `json:"content"`
-	RouteMode      string                 `json:"route_mode,omitempty"`
-	Metadata       map[string]interface{} `json:"metadata"`
-	CreatedAt      int64                  `json:"created_at"`
+	RouteMode        string                 `json:"route_mode,omitempty"`
+	CoordinatorType  string                 `json:"coordinator_type,omitempty"`
+	Metadata         map[string]interface{} `json:"metadata"`
+	CreatedAt        int64                  `json:"created_at"`
+}
+
+const metadataKeyCoordinatorType = "coordinator_type"
+
+// ApplyCoordinatorMetadata 将 CoordinatorType 同步到 metadata，便于 JSONB 查询。
+func ApplyCoordinatorMetadata(msg *Message) {
+	if msg == nil || msg.CoordinatorType == "" {
+		return
+	}
+	if msg.Metadata == nil {
+		msg.Metadata = make(map[string]interface{})
+	}
+	msg.Metadata[metadataKeyCoordinatorType] = msg.CoordinatorType
+}
+
+// CoordinatorTypeFromMessage 从字段或 metadata 读取协调器类型。
+func CoordinatorTypeFromMessage(msg *Message) string {
+	if msg == nil {
+		return ""
+	}
+	if msg.CoordinatorType != "" {
+		return msg.CoordinatorType
+	}
+	if msg.Metadata == nil {
+		return ""
+	}
+	v, _ := msg.Metadata[metadataKeyCoordinatorType].(string)
+	return v
 }
 
 // NewConversation 创建新会话

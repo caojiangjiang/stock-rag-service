@@ -207,7 +207,7 @@ var (
 			Name: "agent_coordinator_total",
 			Help: "Total coordinator executions",
 		},
-		[]string{"coordinator", "status"},
+		[]string{"coordinator", "classifier", "status"},
 	)
 
 	AgentCoordinatorDuration = promauto.NewHistogramVec(
@@ -225,6 +225,24 @@ var (
 			Help: "Total sub-agent or subtask invocations within coordinators",
 		},
 		[]string{"coordinator", "subtask", "status"},
+	)
+
+	// Coordinator 步骤级指标
+	AgentStepTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "agent_coordinator_step_total",
+			Help: "Total steps executed within coordinators",
+		},
+		[]string{"coordinator", "step", "status"},
+	)
+
+	AgentStepDurationVec = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "agent_coordinator_step_duration_seconds",
+			Help:    "Coordinator step latency in seconds",
+			Buckets: []float64{0.1, 0.5, 1, 2, 5, 10, 30},
+		},
+		[]string{"coordinator", "step"},
 	)
 
 	AgentComplexTaskTotal = promauto.NewCounterVec(
@@ -327,15 +345,9 @@ func RecordRAGRetrieval(status, stage string, seconds float64, resultCount int) 
 	RAGRetrievalResults.Observe(float64(resultCount))
 }
 
-// RecordAgentStep 记录 Agent 单步执行（ReAct 等）。
-func RecordAgentStep(seconds float64) {
-	AgentStepsTotal.Inc()
-	AgentStepDuration.Observe(seconds)
-}
-
 // RecordAgentCoordinator 记录协调器整体执行。
-func RecordAgentCoordinator(coordinator, status string, seconds float64) {
-	AgentCoordinatorTotal.WithLabelValues(coordinator, status).Inc()
+func RecordAgentCoordinator(coordinator, classifier, status string, seconds float64) {
+	AgentCoordinatorTotal.WithLabelValues(coordinator, classifier, status).Inc()
 	AgentCoordinatorDuration.WithLabelValues(coordinator).Observe(seconds)
 }
 
@@ -344,6 +356,14 @@ func RecordAgentSubtask(coordinator, subtask, status string, seconds float64) {
 	AgentSubtaskTotal.WithLabelValues(coordinator, subtask, status).Inc()
 	if seconds > 0 {
 		AgentStepDuration.Observe(seconds)
+	}
+}
+
+// RecordAgentStep 记录协调器内单个步骤的执行指标。
+func RecordAgentStep(coordinator, stepName, status string, seconds float64) {
+	AgentStepTotal.WithLabelValues(coordinator, stepName, status).Inc()
+	if seconds > 0 {
+		AgentStepDurationVec.WithLabelValues(coordinator, stepName).Observe(seconds)
 	}
 }
 

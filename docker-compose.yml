@@ -175,6 +175,10 @@ services:
       - stock_rag_network
     profiles:
       - monitoring
+    environment:
+      # LangFuse API keys - 通过 .env 文件或运行时环境变量注入
+      - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY:-}
+      - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY:-}
 
   tempo:
     image: grafana/tempo:2.4.1

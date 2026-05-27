@@ -21,7 +21,7 @@ type PlanCoordinator struct {
 }
 
 func NewPlanCoordinator(profileRegistry *ProfileRegistry, agentBuilder *AgentBuilder) *PlanCoordinator {
-	base := NewBaseCoordinator("plan", profileRegistry, nil)
+	base := NewBaseCoordinator("plan", profileRegistry, agentBuilder)
 	return &PlanCoordinator{
 		BaseCoordinator:   base,
 		supervisorProfile: TaskPlannerProfile,
@@ -52,7 +52,11 @@ func (c *PlanCoordinator) Execute(ctx context.Context, taskState *TaskState) (st
 		if taskState.Status == TaskStatusFailed {
 			status = "error"
 		}
-		RecordCoordinatorResult(c.Name(), status, time.Since(coordinatorStart).Seconds())
+		classifier := taskState.ClassifierType
+		if classifier == "" {
+			classifier = "unknown"
+		}
+		RecordCoordinatorResult(c.Name(), classifier, status, time.Since(coordinatorStart).Seconds())
 	}()
 
 	runCtx, cancel := rt.DeriveContext(ctx)

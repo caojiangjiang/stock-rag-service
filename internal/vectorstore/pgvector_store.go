@@ -11,47 +11,77 @@ import (
 
 	appmodel "stock_rag/internal/model"
 
-	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type PgVectorStore struct {
-	conn *pgx.Conn
+	pool *pgxpool.Pool
 }
 
+// NewPgVectorStore 创建 PgVectorStore（使用 pgxpool 连接池，支持高并发）
 func NewPgVectorStore(ctx context.Context, host, port, user, password, dbname, sslmode string) (*PgVectorStore, error) {
 	if sslmode == "" {
 		sslmode = "disable"
 	}
 	connStr := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
 		host, port, user, password, dbname, sslmode)
-	conn, err := pgx.Connect(context.Background(), connStr)
+
+	config, err := pgxpool.ParseConfig(connStr)
+	if err != nil {
+		return nil, err
+	}
+	// 配置连接池参数，支持高并发
+	config.MaxConns = 50               // 最大连接数
+	config.MinConns = 5                // 最小连接数
+	config.MaxConnLifetime = time.Hour // 连接最大生命周期
+	config.MaxConnIdleTime = 30 * time.Minute
+	config.HealthCheckPeriod = time.Minute
+
+	pool, err := pgxpool.NewWithConfig(context.Background(), config)
 	if err != nil {
 		return nil, err
 	}
 
 	// 初始化表结构
-	if err := initTables(conn); err != nil {
-		conn.Close(ctx)
+	if err := initTables(pool); err != nil {
+		pool.Close()
 		return nil, err
 	}
 
-	return &PgVectorStore{conn: conn}, nil
+	return &PgVectorStore{pool: pool}, nil
+}
+
+// NewPgVectorStoreWithPool 使用已有的 pgxpool.Pool 创建 PgVectorStore
+func NewPgVectorStoreWithPool(pool *pgxpool.Pool) *PgVectorStore {
+	return &PgVectorStore{pool: pool}
+}
+
+// Pool 返回底层的连接池
+func (s *PgVectorStore) Pool() *pgxpool.Pool {
+	return s.pool
+}
+
+// Close 关闭连接池
+func (s *PgVectorStore) Close() {
+	if s.pool != nil {
+		s.pool.Close()
+	}
 }
 
 // initTables 初始化表结构
-func initTables(conn *pgx.Conn) error {
+func initTables(pool *pgxpool.Pool) error {
 	// 启用 pgvector 扩展
-	_, err := conn.Exec(context.Background(), "CREATE EXTENSION IF NOT EXISTS vector")
+	_, err := pool.Exec(context.Background(), "CREATE EXTENSION IF NOT EXISTS vector")
 	if err != nil {
 		return err
 	}
-	_, err = conn.Exec(context.Background(), "CREATE EXTENSION IF NOT EXISTS pg_trgm")
+	_, err = pool.Exec(context.Background(), "CREATE EXTENSION IF NOT EXISTS pg_trgm")
 	if err != nil {
 		return err
 	}
 
 	// 创建统一文档表
-	_, err = conn.Exec(context.Background(), `
+	_, err = pool.Exec(context.Background(), `
 		CREATE TABLE IF NOT EXISTS documents (
 			doc_id SERIAL PRIMARY KEY,
 			stock_code VARCHAR(20) NOT NULL,
@@ -111,7 +141,7 @@ func (s *PgVectorStore) Upsert(ctx context.Context, records []Record) error {
 		publishedAt := parsePublishedAt(record.Metadata["published_at"])
 
 		// 插入文档
-		err := s.conn.QueryRow(ctx, `
+		err := s.pool.QueryRow(ctx, `
 			INSERT INTO documents (stock_code, company_name, doc_type, title, source_url, published_at, source, raw_data) 
 			VALUES ($1, $2, $3, $4, $5, $6, $7, $8) 
 				ON CONFLICT (title, stock_code) DO UPDATE SET
@@ -150,7 +180,7 @@ func (s *PgVectorStore) Upsert(ctx context.Context, records []Record) error {
 		pageNo := parseOptionalInt(record.Metadata["page_no"])
 
 		// 插入或更新向量，使用记录索引作为 chunk_index
-		_, err = s.conn.Exec(ctx, `
+		_, err = s.pool.Exec(ctx, `
 				INSERT INTO document_chunks (doc_id, chunk_index, section_title, page_no, content, embedding, metadata) 
 				VALUES ($1, $2, $3, $4, $5, $6, $7) 
 				ON CONFLICT (doc_id, chunk_index) DO UPDATE SET 
@@ -169,14 +199,14 @@ func (s *PgVectorStore) Upsert(ctx context.Context, records []Record) error {
 func (s *PgVectorStore) ensureVectorTable(ctx context.Context, dimension int) error {
 	// 检查表是否存在
 	var exists bool
-	err := s.conn.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM information_schema.tables WHERE table_name = 'document_chunks')").Scan(&exists)
+	err := s.pool.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM information_schema.tables WHERE table_name = 'document_chunks')").Scan(&exists)
 	if err != nil {
 		return err
 	}
 
 	if !exists {
 		// 表不存在，创建新表
-		_, err = s.conn.Exec(ctx, fmt.Sprintf(`
+		_, err = s.pool.Exec(ctx, fmt.Sprintf(`
 			CREATE TABLE document_chunks (
 				chunk_id SERIAL PRIMARY KEY,
 				doc_id INTEGER,
@@ -199,7 +229,7 @@ func (s *PgVectorStore) ensureVectorTable(ctx context.Context, dimension int) er
 		}
 
 		// 添加外键约束
-		_, err = s.conn.Exec(ctx, `
+		_, err = s.pool.Exec(ctx, `
 			ALTER TABLE document_chunks ADD CONSTRAINT fk_document_chunks_doc_id
 				FOREIGN KEY (doc_id) REFERENCES documents(doc_id) ON DELETE CASCADE
 		`)
@@ -209,7 +239,7 @@ func (s *PgVectorStore) ensureVectorTable(ctx context.Context, dimension int) er
 
 		// 只有当向量维度 <= 2000 时才创建向量索引
 		if dimension <= 2000 {
-			_, err = s.conn.Exec(ctx, `
+			_, err = s.pool.Exec(ctx, `
 				CREATE INDEX idx_document_chunks_embedding 
 				ON document_chunks 
 				USING ivfflat (embedding vector_cosine_ops)
@@ -221,7 +251,7 @@ func (s *PgVectorStore) ensureVectorTable(ctx context.Context, dimension int) er
 		}
 	}
 
-	_, _ = s.conn.Exec(ctx, `
+	_, _ = s.pool.Exec(ctx, `
 		CREATE INDEX IF NOT EXISTS idx_document_chunks_content_fts ON document_chunks USING GIN (to_tsvector('simple', content));
 		CREATE INDEX IF NOT EXISTS idx_document_chunks_content_trgm ON document_chunks USING GIN (content gin_trgm_ops);
 	`)
@@ -232,13 +262,13 @@ func (s *PgVectorStore) ensureVectorTable(ctx context.Context, dimension int) er
 // recreateVectorTable 重建向量表
 func (s *PgVectorStore) recreateVectorTable(ctx context.Context, dimension int) error {
 	// 先删除表（如果存在）
-	_, err := s.conn.Exec(ctx, "DROP TABLE IF EXISTS document_chunks CASCADE")
+	_, err := s.pool.Exec(ctx, "DROP TABLE IF EXISTS document_chunks CASCADE")
 	if err != nil {
 		return err
 	}
 
 	// 创建新表
-	_, err = s.conn.Exec(ctx, fmt.Sprintf(`
+	_, err = s.pool.Exec(ctx, fmt.Sprintf(`
 		CREATE TABLE document_chunks (
 			chunk_id SERIAL PRIMARY KEY,
 			doc_id INTEGER,
@@ -261,7 +291,7 @@ func (s *PgVectorStore) recreateVectorTable(ctx context.Context, dimension int) 
 	}
 
 	// 添加外键约束
-	_, err = s.conn.Exec(ctx, `
+	_, err = s.pool.Exec(ctx, `
 		ALTER TABLE document_chunks ADD CONSTRAINT fk_document_chunks_doc_id
 			FOREIGN KEY (doc_id) REFERENCES documents(doc_id) ON DELETE CASCADE
 	`)
@@ -271,7 +301,7 @@ func (s *PgVectorStore) recreateVectorTable(ctx context.Context, dimension int) 
 
 	// 只有当向量维度 <= 2000 时才创建向量索引
 	if dimension <= 2000 {
-		_, err = s.conn.Exec(ctx, `
+		_, err = s.pool.Exec(ctx, `
 			CREATE INDEX idx_document_chunks_embedding 
 			ON document_chunks 
 			USING ivfflat (embedding vector_cosine_ops)
@@ -372,7 +402,7 @@ func (s *PgVectorStore) Search(ctx context.Context, req SearchRequest) ([]Search
 	args = append(args, req.TopK)
 
 	// 执行查询
-	rows, err := s.conn.Query(ctx, query, args...)
+	rows, err := s.pool.Query(ctx, query, args...)
 	if err != nil {
 		// 如果查询失败，尝试使用简单查询
 		fallbackQuery := `
@@ -421,7 +451,7 @@ func (s *PgVectorStore) Search(ctx context.Context, req SearchRequest) ([]Search
 		fallbackQuery += fmt.Sprintf(" LIMIT $%d", fallbackArgPos)
 		fallbackArgs = append(fallbackArgs, req.TopK)
 
-		rows, err = s.conn.Query(ctx, fallbackQuery, fallbackArgs...)
+		rows, err = s.pool.Query(ctx, fallbackQuery, fallbackArgs...)
 		if err != nil {
 			// 如果查询失败，返回空结果
 			return []SearchResult{}, nil
@@ -545,7 +575,7 @@ func (s *PgVectorStore) KeywordSearch(ctx context.Context, req KeywordSearchRequ
 	query += fmt.Sprintf(" ORDER BY score DESC LIMIT $%d", argPos)
 	args = append(args, req.TopK)
 
-	rows, err := s.conn.Query(ctx, query, args...)
+	rows, err := s.pool.Query(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -612,7 +642,7 @@ func (s *PgVectorStore) ListDocuments(ctx context.Context) ([]appmodel.Document,
 		ORDER BY created_at DESC
 	`
 
-	rows, err := s.conn.Query(ctx, query)
+	rows, err := s.pool.Query(ctx, query)
 	if err != nil {
 		return nil, err
 	}
@@ -667,7 +697,7 @@ func (s *PgVectorStore) ListAvailableDocTypes(ctx context.Context, stockCode str
 	}
 	query += " ORDER BY doc_type"
 
-	rows, err := s.conn.Query(ctx, query, args...)
+	rows, err := s.pool.Query(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -764,7 +794,7 @@ func (s *PgVectorStore) FallbackDocumentSearch(ctx context.Context, req KeywordS
 	`, textArgPos, textArgPos, textArgPos, textArgPos, patternArgPos, textArgPos, textArgPos, textArgPos, textArgPos, patternArgPos, limitArgPos)
 	args = append(args, queryText, likePatterns, req.TopK)
 
-	rows, err := s.conn.Query(ctx, query, args...)
+	rows, err := s.pool.Query(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}

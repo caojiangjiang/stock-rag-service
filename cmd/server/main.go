@@ -64,30 +64,27 @@ func main() {
 	// 初始化 Redis 客户端（共享给语义缓存、精确缓存、限流和健康检查）
 	redisClient := initRedisClient(config.Database.Redis)
 
+	// 初始化工具（注册到全局单例）
 	querySvc := initQueryService(ctx, store, embedder, redisClient)
+	initToolRegistry(querySvc)
+	coordinatorFactory := initCoordinatorFactory()
+
 	conversationStore, pgConversationStore := initConversationStore(config.Database.Postgres)
-	toolRegistry := initToolRegistry(querySvc)
-	taskAgentService := initTaskAgentService(toolRegistry, conversationStore)
+	taskAgentService := initTaskAgentService(coordinatorFactory, conversationStore)
 	authService, jwtSecret := initAuthService(pgConversationStore, redisClient)
 
-	chatService := initChatService(querySvc, conversationStore, pgConversationStore, taskAgentService, toolRegistry, store, embedder, redisClient)
+	coordinatorSelector := initCoordinatorSelector()
+	chatService := initChatService(ChatServiceDependencies{
+		ConversationStore:   conversationStore,
+		CoordinatorSelector: coordinatorSelector,
+		TaskAgentService:    taskAgentService,
+		ToolRegistry:        einotools.GetGlobalRegistry(),
+		RedisClient:         redisClient,
+	})
 	mux := api.NewRouter(querySvc, taskAgentService, authService, jwtSecret, chatService, conversationStore, pgConversationStore.DB(), redisClient)
 
-	// 添加限流中间件（如果 Redis 可用，使用分布式限流；否则使用内存限流）
-	var rateLimiter limiter.RateLimiter
-	if redisClient != nil {
-		rateLimiter = limiter.NewRedisTokenBucket(redisClient, limiter.TokenBucketConfig{
-			Capacity:   100, // 桶容量：100 个令牌
-			RefillRate: 10,  // 每秒补充 10 个令牌
-		}, "httpratelimit:")
-		log.Println("Rate limiter initialized (Redis distributed)")
-	} else {
-		rateLimiter = limiter.NewTokenBucket(limiter.TokenBucketConfig{
-			Capacity:   100,
-			RefillRate: 10,
-		})
-		log.Println("Rate limiter initialized (in-memory)")
-	}
+	// 限流中间件
+	rateLimiter := initRateLimiter(redisClient)
 
 	// 限流中间件：按 IP 限流
 	handler := limiter.RateLimitMiddleware(rateLimiter, limiter.DefaultKeyFunc)(mux)
@@ -227,45 +224,73 @@ func initConversationStore(postgresConfig pkgctx.PostgresConfig) (repository.Uni
 }
 
 func initToolRegistry(querySvc *service.QueryService) *einotools.ToolRegistry {
-	toolRegistry := einotools.NewToolRegistry()
+	// 使用全局单例工具注册表
+	toolRegistry := einotools.GetGlobalRegistry()
 	if err := toolRegistry.RegisterStandardTools(querySvc); err != nil {
 		log.Fatalf("Failed to register standard tools: %v", err)
 	}
 	return toolRegistry
 }
 
-func initTaskAgentService(toolRegistry *einotools.ToolRegistry, conversationStore repository.UnifiedConversationStore) *service.TaskAgentService {
-	// 使用新的 Coordinator 体系
-	// 1. 创建 ProfileRegistry 并注册默认 profiles
+func initCoordinatorFactory() *einoagent.CoordinatorFactory {
 	profileRegistry := einoagent.NewProfileRegistry()
-
-	// 2. 使用共享 ToolRegistry
-
-	// 3. 创建 AgentBuilder
+	// 通过全局单例获取工具注册表
+	toolRegistry := einotools.GetGlobalRegistry()
 	agentBuilder := einoagent.NewAgentBuilder(toolRegistry)
+	return einoagent.NewCoordinatorFactory(profileRegistry, agentBuilder)
+}
 
-	// 4. 创建 CoordinatorFactory
-	coordinatorFactory := einoagent.NewCoordinatorFactory(profileRegistry, agentBuilder, toolRegistry)
-
-	// 5. 创建 Coordinator（默认 supervisor，可通过 COORDINATOR_TYPE 切换）
-	coordinatorType := resolveCoordinatorType()
-	coordinator, err := coordinatorFactory.Create(coordinatorType)
-	if err != nil {
-		log.Fatalf("Failed to create coordinator %s: %v", coordinatorType, err)
-	}
-	log.Printf("Task agent coordinator: %s", coordinatorType)
-
-	// 6. 设置子 Agent profiles
-	coordinator.SetAgentProfiles([]*einoagent.AgentProfile{
+func defaultCoordinatorProfiles() []*einoagent.AgentProfile {
+	return []*einoagent.AgentProfile{
 		einoagent.EvidenceCollectorProfile,
 		einoagent.MetricExtractorProfile,
 		einoagent.AnalystWriterProfile,
-	})
+	}
+}
 
-	// 7. 使用 CoordinatorSupervisorAdapter（含超时与协调级重试）
-	supervisorAdapter := einoagent.NewCoordinatorSupervisorAdapter(coordinator)
+func initTaskAgentService(coordinatorFactory *einoagent.CoordinatorFactory, conversationStore repository.UnifiedConversationStore) *service.TaskAgentService {
+	dynamicAgent := agent.NewDynamicCoordinatorAgent(coordinatorFactory, defaultCoordinatorProfiles())
+	return service.NewTaskAgentService(dynamicAgent, conversationStore)
+}
 
-	return service.NewTaskAgentService(supervisorAdapter, conversationStore)
+func initCoordinatorSelector() *einoagent.CoordinatorSelector {
+	// 尝试从配置文件加载规则，失败则使用默认规则
+	var ruleMatcher einoagent.CoordinatorRuleMatcher
+	configPath := os.Getenv("COORDINATOR_RULES_CONFIG")
+	if configPath == "" {
+		configPath = "configs/coordinator_rules.yaml"
+	}
+
+	matcher, err := einoagent.NewConfigurableCoordinatorRuleMatcher(configPath)
+	if err != nil {
+		log.Printf("Warning: Failed to load coordinator rules from %s: %v, using default rules", configPath, err)
+		ruleMatcher = einoagent.NewDefaultCoordinatorRuleMatcher()
+	} else {
+		log.Printf("Successfully loaded coordinator rules from %s", configPath)
+		ruleMatcher = matcher
+	}
+
+	// 初始化 LLM 分类器（如果 LLM 客户端已初始化）
+	var llmClassifier einoagent.CoordinatorLLMClassifier
+	if llm.GetLLMClient() != nil {
+		llmClassifier = einoagent.NewCoordinatorLLMClassifier(llm.GetLLMClient())
+		log.Println("Coordinator LLM classifier enabled")
+	} else {
+		log.Println("Coordinator LLM classifier disabled (LLM client not initialized)")
+	}
+
+	// 修复：需要检查是否为 nil 的方式
+	var classifierPtr einoagent.CoordinatorLLMClassifier
+	if llmClassifier != nil {
+		classifierPtr = llmClassifier
+	}
+
+	return einoagent.NewCoordinatorSelector(
+		einoagent.DefaultCoordinatorSelectConfig(),
+		ruleMatcher,
+		classifierPtr,
+		nil,
+	)
 }
 
 func initAuthService(pgConversationStore *repository.PostgresConversationStore, redisClient *redis.Client) (auth.AuthService, string) {
@@ -315,17 +340,56 @@ func initAuthService(pgConversationStore *repository.PostgresConversationStore, 
 	return auth.NewAuthServiceFromConfig(cfg), jwtSecret
 }
 
-func initChatService(querySvc *service.QueryService, conversationStore repository.UnifiedConversationStore, pgConversationStore *repository.PostgresConversationStore, taskAgentService *service.TaskAgentService, toolRegistry *einotools.ToolRegistry, store unifiedDataStore, embedder embedding.Embedder, redisClient *redis.Client) *agent.ChatService {
+// initRateLimiter 初始化限流器（Redis 可用时使用分布式限流，否则使用内存限流）
+func initRateLimiter(redisClient *redis.Client) limiter.RateLimiter {
+	if redisClient != nil {
+		log.Println("Rate limiter initialized (Redis distributed)")
+		return limiter.NewRedisTokenBucket(redisClient, limiter.TokenBucketConfig{
+			Capacity:   100, // 桶容量：100 个令牌
+			RefillRate: 10,  // 每秒补充 10 个令牌
+		}, "httpratelimit:")
+	}
+	log.Println("Rate limiter initialized (in-memory)")
+	return limiter.NewTokenBucket(limiter.TokenBucketConfig{
+		Capacity:   100,
+		RefillRate: 10,
+	})
+}
+
+// ChatServiceDependencies 封装 ChatService 的依赖，optional 依赖统一使用 nil 策略
+type ChatServiceDependencies struct {
+	ConversationStore   repository.UnifiedConversationStore
+	CoordinatorSelector *einoagent.CoordinatorSelector
+	TaskAgentService    *service.TaskAgentService
+	ToolRegistry        *einotools.ToolRegistry
+	RedisClient         *redis.Client
+}
+
+func initChatService(deps ChatServiceDependencies) *agent.ChatService {
+	// 初始化 LLM 分类器（提升复杂意图识别能力）
+	var llmClassifier router.LLMClassifier
+	if llm.GetLLMClient() != nil {
+		adapter := router.NewLLMClientAdapter(llm.GetLLMClient())
+		llmClassifier = router.NewLLMRouterClassifier(adapter)
+		log.Println("RouteEngine LLM classifier enabled")
+	} else {
+		log.Println("Warning: LLM client not available, RouteEngine using hard rules only")
+	}
+
 	routeEngine := router.NewRouteEngine(
 		router.DefaultRouteConfig(),
-		nil,
+		llmClassifier,
 		router.NewHardRuleMatcher(),
 		nil,
 	)
 	chatExecutor := agent.NewChatExecutor(llm.GetLLMClient())
 
-	// ModeAgent 入口：默认 Supervisor；设置 AGENT_EXECUTOR=react 启用 ReAct 循环
-	modeAgentExecutor := selectModeAgentExecutor(taskAgentService, toolRegistry)
+	// ModeAgent 入口
+	toolRegistry := deps.ToolRegistry
+	if toolRegistry == nil {
+		toolRegistry = einotools.GetGlobalRegistry()
+	}
+	modeAgentExecutor := selectModeAgentExecutor(deps.TaskAgentService, toolRegistry)
 	if modeAgentExecutor.Name() == "react_agent_executor" {
 		log.Println("ModeAgent using ReAct executor (AGENT_EXECUTOR=react)")
 	} else {
@@ -334,71 +398,39 @@ func initChatService(querySvc *service.QueryService, conversationStore repositor
 
 	agentExecutor := agent.NewAgentExecutor(chatExecutor, modeAgentExecutor)
 
-	// 初始化精确缓存
-	redisHost := strings.TrimSpace(os.Getenv("REDIS_HOST"))
-	redisPort := strings.TrimSpace(os.Getenv("REDIS_PORT"))
-	redisPassword := strings.TrimSpace(os.Getenv("REDIS_PASSWORD"))
-	redisDB := 0
-
+	// 初始化精确缓存（optional）
 	var exactCache *cache.ExactCache
-	// 如果没有传入 redisClient，创建一个新的
-	if redisClient == nil && redisHost != "" {
-		redisAddr := fmt.Sprintf("%s:%s", redisHost, redisPort)
-		redisClient = redis.NewClient(&redis.Options{
-			Addr:     redisAddr,
-			Password: redisPassword,
-			DB:       redisDB,
-		})
-	}
-
-	if redisClient != nil {
-		exactCache = cache.NewExactCache(redisClient, cache.DefaultExactCacheConfig())
+	if deps.RedisClient != nil {
+		exactCache = cache.NewExactCache(deps.RedisClient, cache.DefaultExactCacheConfig())
 		log.Println("Exact cache initialized for chat service")
 	} else {
 		log.Println("Warning: REDIS_HOST not set, exact cache disabled for chat service")
 	}
 
-	// 初始化记忆存储（短/中/长期）
+	// 初始化记忆存储（optional）
+	var mem memory.Memory
 	memDeps := memory.Dependencies{
-		Redis:       redisClient,
-		VectorStore: store,
-		Embedder:    embedder,
+		Redis: deps.RedisClient,
+		DB:    nil,
 	}
-	if pgConversationStore != nil {
-		memDeps.DB = pgConversationStore.DB()
-	}
-	mem := memory.New(memory.DefaultConfig(), memDeps)
-	if pgConversationStore != nil {
-		if err := mem.InitSchema(context.Background()); err != nil {
-			log.Printf("Warning: Failed to initialize memory schema: %v", err)
-		} else {
-			log.Println("Memory stores (short/medium/long) initialized")
-		}
-	} else if redisClient != nil {
+	mem = memory.New(memory.DefaultConfig(), memDeps)
+	if deps.RedisClient != nil {
 		log.Println("Working memory (short-term) initialized")
 	} else {
-		log.Println("Warning: memory stores disabled (no Redis/PostgreSQL)")
+		log.Println("Warning: memory stores disabled (no Redis)")
 	}
 
-	return agent.NewChatService(routeEngine, agentExecutor, conversationStore, exactCache, mem)
+	if explicit := agent.ExplicitCoordinatorFromEnv(); explicit != "" {
+		log.Printf("COORDINATOR_TYPE=%s (explicit override for coordinator selection)", explicit)
+	} else {
+		log.Println("Coordinator selection: automatic (CoordinatorSelector)")
+	}
+
+	return agent.NewChatService(routeEngine, deps.CoordinatorSelector, agentExecutor, deps.ConversationStore, exactCache, mem)
 }
 
 // selectModeAgentExecutor 按环境变量选择 ModeAgent 实现。
 // AGENT_EXECUTOR=react 时使用 ReAct 思考-行动-观察循环；默认使用 Supervisor 多 Agent。
-func resolveCoordinatorType() einoagent.CoordinatorType {
-	switch strings.ToLower(strings.TrimSpace(os.Getenv("COORDINATOR_TYPE"))) {
-	case "plan":
-		return einoagent.CoordinatorTypePlan
-	case "pipeline":
-		return einoagent.CoordinatorTypePipeline
-	case "workflow":
-		return einoagent.CoordinatorTypeWorkflow
-	case "peer":
-		return einoagent.CoordinatorTypePeer
-	default:
-		return einoagent.CoordinatorTypeSupervisor
-	}
-}
 
 func selectModeAgentExecutor(taskAgentService *service.TaskAgentService, toolRegistry *einotools.ToolRegistry) agent.Executor {
 	if strings.EqualFold(strings.TrimSpace(os.Getenv("AGENT_EXECUTOR")), "react") {

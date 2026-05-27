@@ -19,15 +19,18 @@ type Executor interface {
 }
 
 type ExecuteRequest struct {
-	ConversationID string
-	MessageID      string
-	UserID         string
-	UserMessage    string
-	Mode           router.RouteMode
-	StockCode      string
-	DocType        string
-	TimeRange      string
-	OnChunk        func(string) error
+	ConversationID  string
+	MessageID       string
+	UserID          string
+	UserMessage     string
+	Mode            router.RouteMode
+	CoordinatorType string
+	RouteConfidence float64
+	RouteReason     string
+	StockCode       string
+	DocType         string
+	TimeRange       string
+	OnChunk         func(string) error
 }
 
 type ExecuteResponse struct {

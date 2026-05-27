@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"stock_rag/internal/eino/retriever"
@@ -49,6 +50,23 @@ type ToolRegistry struct {
 	guard      *ToolGuard
 }
 
+// 全局单例
+var (
+	defaultRegistry *ToolRegistry
+	once            sync.Once
+)
+
+// GetGlobalRegistry 获取全局工具注册表单例
+// 使用 sync.Once 确保线程安全，且只在首次调用时初始化
+func GetGlobalRegistry() *ToolRegistry {
+	once.Do(func() {
+		defaultRegistry = NewToolRegistry()
+	})
+	return defaultRegistry
+}
+
+// NewToolRegistry 创建新的工具注册表实例
+// 用于需要独立注册表的场景（如单元测试）
 func NewToolRegistry() *ToolRegistry {
 	return &ToolRegistry{
 		tools:      make(map[string]*ToolInfo),

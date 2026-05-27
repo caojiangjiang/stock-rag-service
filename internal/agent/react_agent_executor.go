@@ -112,13 +112,13 @@ type AgentThought struct {
 
 // ToolObservation 结构化工具观察结果（回写给 LLM）
 type ToolObservation struct {
-	Step      int         `json:"step"`
-	Tool      string      `json:"tool"`
-	Status    string      `json:"status"` // success | error | degraded
-	Result    interface{} `json:"result,omitempty"`
-	Error     string      `json:"error,omitempty"`
-	Degraded  bool        `json:"degraded,omitempty"`
-	Attempt   int         `json:"attempt,omitempty"`
+	Step     int         `json:"step"`
+	Tool     string      `json:"tool"`
+	Status   string      `json:"status"` // success | error | degraded
+	Result   interface{} `json:"result,omitempty"`
+	Error    string      `json:"error,omitempty"`
+	Degraded bool        `json:"degraded,omitempty"`
+	Attempt  int         `json:"attempt,omitempty"`
 }
 
 // Execute 执行 ReAct 循环
@@ -172,7 +172,7 @@ func (e *ReActAgentExecutor) Execute(ctx context.Context, req *ExecuteRequest) (
 
 		if isFinalAnswer {
 			content := finalizeAnswer(thought, actionInput)
-			metrics.RecordAgentStep(time.Since(stepStart).Seconds())
+			metrics.RecordAgentStep("react_agent", "final_answer", "success", time.Since(stepStart).Seconds())
 			observability.L().InfoCtx(ctx, "ReAct loop completed with final answer", "step", step)
 			return &ExecuteResponse{
 				Content:   content,
@@ -190,7 +190,7 @@ func (e *ReActAgentExecutor) Execute(ctx context.Context, req *ExecuteRequest) (
 			})
 			thoughtHistory[len(thoughtHistory)-1].Observation = obs
 			messages = append(messages, e.assistantStepMessage(thought, action, actionInput, obs))
-			metrics.RecordAgentStep(time.Since(stepStart).Seconds())
+			metrics.RecordAgentStep("react_agent", "parse_action", "error", time.Since(stepStart).Seconds())
 			continue
 		}
 
@@ -202,7 +202,11 @@ func (e *ReActAgentExecutor) Execute(ctx context.Context, req *ExecuteRequest) (
 		}
 
 		messages = append(messages, e.assistantStepMessage(thought, action, actionInput, observation))
-		metrics.RecordAgentStep(time.Since(stepStart).Seconds())
+		stepStatus := "success"
+		if err != nil {
+			stepStatus = "error"
+		}
+		metrics.RecordAgentStep("react_agent", action, stepStatus, time.Since(stepStart).Seconds())
 
 		if err != nil {
 			observability.L().WarnCtx(ctx, "ReActAgentExecutor tool execution failed",

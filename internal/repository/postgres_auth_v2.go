@@ -13,63 +13,82 @@ import (
 )
 
 type AuthSession struct {
-	ID                string    `json:"id"`
-	UserID            string    `json:"user_id"`
-	SessionTokenHash  string    `json:"session_token_hash"`
-	JWTJTI            string    `json:"jwt_jti,omitempty"`
-	ClientInfo        string    `json:"client_info,omitempty"`
-	IP                string    `json:"ip,omitempty"`
-	UserAgent         string    `json:"user_agent,omitempty"`
-	LastActiveAt      time.Time `json:"last_active_at"`
-	ExpiresAt         time.Time `json:"expires_at"`
-	RevokedAt         time.Time `json:"revoked_at,omitempty"`
-	CreatedAt         time.Time `json:"created_at"`
+	ID               string    `json:"id"`
+	UserID           string    `json:"user_id"`
+	SessionTokenHash string    `json:"session_token_hash"`
+	JWTJTI           string    `json:"jwt_jti,omitempty"`
+	ClientInfo       string    `json:"client_info,omitempty"`
+	IP               string    `json:"ip,omitempty"`
+	UserAgent        string    `json:"user_agent,omitempty"`
+	LastActiveAt     time.Time `json:"last_active_at"`
+	ExpiresAt        time.Time `json:"expires_at"`
+	RevokedAt        time.Time `json:"revoked_at,omitempty"`
+	CreatedAt        time.Time `json:"created_at"`
 }
 
 type ConversationSummary struct {
-	ID              string    `json:"id"`
-	ConversationID  string    `json:"conversation_id"`
-	Version         int       `json:"version"`
-	SummaryType     string    `json:"summary_type"`    // rolling/milestone/route_context
-	SummaryText     string    `json:"summary_text"`
-	SummaryJSON     string    `json:"summary_json"`     // 结构化摘要 JSON
-	SourceStartSeq  int64     `json:"source_start_seq"`
-	SourceEndSeq    int64     `json:"source_end_seq"`
-	TokenCount      int       `json:"token_count"`
-	ModelName       string    `json:"model_name,omitempty"`
-	Status          string    `json:"status"`          // pending/ready/failed
-	CreatedBy       string    `json:"created_by"`       // async_worker/manual/system
-	CreatedAt       time.Time `json:"created_at"`
+	ID             string    `json:"id"`
+	ConversationID string    `json:"conversation_id"`
+	Version        int       `json:"version"`
+	SummaryType    string    `json:"summary_type"` // rolling/milestone/route_context
+	SummaryText    string    `json:"summary_text"`
+	SummaryJSON    string    `json:"summary_json"` // 结构化摘要 JSON
+	SourceStartSeq int64     `json:"source_start_seq"`
+	SourceEndSeq   int64     `json:"source_end_seq"`
+	TokenCount     int       `json:"token_count"`
+	ModelName      string    `json:"model_name,omitempty"`
+	Status         string    `json:"status"`     // pending/ready/failed
+	CreatedBy      string    `json:"created_by"` // async_worker/manual/system
+	CreatedAt      time.Time `json:"created_at"`
 }
 
 type RouteDecision struct {
-	ID                 string    `json:"id"`
-	ConversationID     string    `json:"conversation_id"`
-	MessageID          string    `json:"message_id"`
-	ClassifierType     string    `json:"classifier_type"`    // rule/llm/hybrid
-	ClassifierVersion  string    `json:"classifier_version"`
-	PredictedMode      string    `json:"predicted_mode"`    // chat/rag/agent/analysis
-	Confidence         float64   `json:"confidence"`
-	Reason             string    `json:"reason,omitempty"`
-	Candidates         string    `json:"candidates"`        // JSON array
-	Selected           bool      `json:"selected"`
-	CreatedAt          time.Time `json:"created_at"`
+	ID                string    `json:"id"`
+	ConversationID    string    `json:"conversation_id"`
+	MessageID         string    `json:"message_id"`
+	ClassifierType    string    `json:"classifier_type"` // rule/llm/hybrid
+	ClassifierVersion string    `json:"classifier_version"`
+	PredictedMode     string    `json:"predicted_mode"` // chat/rag/agent/analysis
+	Confidence        float64   `json:"confidence"`
+	Reason            string    `json:"reason,omitempty"`
+	Candidates        string    `json:"candidates"` // JSON array
+	Selected          bool      `json:"selected"`
+	CreatedAt         time.Time `json:"created_at"`
+}
+
+// CoordinatorDecision 协调器决策记录（与 RouteDecision 通过 MessageID 关联）
+type CoordinatorDecision struct {
+	ID                string    `json:"id"`
+	ConversationID    string    `json:"conversation_id"`
+	MessageID         string    `json:"message_id"`      // 关联 RouteDecision
+	ClassifierType    string    `json:"classifier_type"` // rule/llm/stickiness/complexity/default
+	ClassifierVersion string    `json:"classifier_version"`
+	PredictedType     string    `json:"predicted_type"` // plan/supervisor/pipeline/workflow/debate/committee/peer/deep
+	SelectedType      string    `json:"selected_type"`
+	Confidence        float64   `json:"confidence"`
+	Reason            string    `json:"reason,omitempty"`
+	Candidates        string    `json:"candidates"` // JSON array
+	ComplexityScore   float64   `json:"complexity_score"`
+	TriggeredFallback bool      `json:"triggered_fallback"`
+	UserFollowUp      bool      `json:"user_follow_up"`
+	LatencyMs         int       `json:"latency_ms"`
+	CreatedAt         time.Time `json:"created_at"`
 }
 
 type ConversationJob struct {
-	ID              string    `json:"id"`
-	JobType         string    `json:"job_type"`        // summarize/rewrite/route/title
-	ConversationID  string    `json:"conversation_id"`
-	MessageID       string    `json:"message_id,omitempty"`
-	Payload         string    `json:"payload"`         // JSON
-	Status          string    `json:"status"`          // pending/running/success/failed
-	AttemptCount    int       `json:"attempt_count"`
-	MaxAttempts     int       `json:"max_attempts"`
-	NextRunAt       time.Time `json:"next_run_at"`
-	LockedAt        time.Time `json:"locked_at,omitempty"`
-	LastError       string    `json:"last_error,omitempty"`
-	CreatedAt       time.Time `json:"created_at"`
-	UpdatedAt       time.Time `json:"updated_at"`
+	ID             string    `json:"id"`
+	JobType        string    `json:"job_type"` // summarize/rewrite/route/title
+	ConversationID string    `json:"conversation_id"`
+	MessageID      string    `json:"message_id,omitempty"`
+	Payload        string    `json:"payload"` // JSON
+	Status         string    `json:"status"`  // pending/running/success/failed
+	AttemptCount   int       `json:"attempt_count"`
+	MaxAttempts    int       `json:"max_attempts"`
+	NextRunAt      time.Time `json:"next_run_at"`
+	LockedAt       time.Time `json:"locked_at,omitempty"`
+	LastError      string    `json:"last_error,omitempty"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
 }
 
 type PostgresAuthRepositoryV2 struct {
@@ -532,6 +551,22 @@ func (r *PostgresAuthRepositoryV2) CreateRouteDecision(decision *RouteDecision) 
 	return err
 }
 
+// CreateCoordinatorDecision 创建协调器决策记录（与 RouteDecision 通过 MessageID 关联）
+func (r *PostgresAuthRepositoryV2) CreateCoordinatorDecision(decision *CoordinatorDecision) error {
+	ctx := context.Background()
+	candidatesJSON, _ := json.Marshal(decision.Candidates)
+	_, err := r.pool.Exec(ctx, `
+		INSERT INTO coordinator_decisions (id, conversation_id, message_id, classifier_type, classifier_version,
+			predicted_type, selected_type, confidence, reason, candidates, complexity_score,
+			triggered_fallback, user_follow_up, latency_ms, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+	`, decision.ID, decision.ConversationID, decision.MessageID, decision.ClassifierType,
+		decision.ClassifierVersion, decision.PredictedType, decision.SelectedType,
+		decision.Confidence, decision.Reason, candidatesJSON, decision.ComplexityScore,
+		decision.TriggeredFallback, decision.UserFollowUp, decision.LatencyMs, decision.CreatedAt)
+	return err
+}
+
 func (r *PostgresAuthRepositoryV2) CreateJob(job *ConversationJob) error {
 	ctx := context.Background()
 	payloadJSON, _ := json.Marshal(job.Payload)
@@ -629,26 +664,26 @@ type ConversationV2 struct {
 }
 
 type MessageV2 struct {
-	ID              string                 `json:"id"`
-	ConversationID  string                 `json:"conversation_id"`
-	UserID          string                 `json:"user_id"`
-	Seq             int64                  `json:"seq"`
-	Role            string                 `json:"role"`
-	MessageType     string                 `json:"message_type"`
-	Content         string                 `json:"content"`
-	ContentJSON     map[string]interface{} `json:"content_json,omitempty"`
-	ParentMessageID string                 `json:"parent_message_id,omitempty"`
-	RouteMode       string                 `json:"route_mode,omitempty"`
-	ToolName        string                 `json:"tool_name,omitempty"`
+	ID              string                   `json:"id"`
+	ConversationID  string                   `json:"conversation_id"`
+	UserID          string                   `json:"user_id"`
+	Seq             int64                    `json:"seq"`
+	Role            string                   `json:"role"`
+	MessageType     string                   `json:"message_type"`
+	Content         string                   `json:"content"`
+	ContentJSON     map[string]interface{}   `json:"content_json,omitempty"`
+	ParentMessageID string                   `json:"parent_message_id,omitempty"`
+	RouteMode       string                   `json:"route_mode,omitempty"`
+	ToolName        string                   `json:"tool_name,omitempty"`
 	ToolCalls       []map[string]interface{} `json:"tool_calls,omitempty"`
 	ToolResults     []map[string]interface{} `json:"tool_results,omitempty"`
 	Citations       []map[string]interface{} `json:"citations,omitempty"`
-	ModelName       string                 `json:"model_name,omitempty"`
-	InputTokens     int                    `json:"input_tokens"`
-	OutputTokens    int                    `json:"output_tokens"`
-	LatencyMs       int                    `json:"latency_ms"`
-	Status          string                 `json:"status"`
-	CreatedAt       time.Time              `json:"created_at"`
+	ModelName       string                   `json:"model_name,omitempty"`
+	InputTokens     int                      `json:"input_tokens"`
+	OutputTokens    int                      `json:"output_tokens"`
+	LatencyMs       int                      `json:"latency_ms"`
+	Status          string                   `json:"status"`
+	CreatedAt       time.Time                `json:"created_at"`
 }
 
 type WindowV2 struct {

@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"time"
-
-	"stock_rag/internal/eino/tools"
 )
 
 // CommitteeCoordinator 委员会模式协调器
@@ -16,8 +14,8 @@ type CommitteeCoordinator struct {
 }
 
 // NewCommitteeCoordinator 创建委员会协调器
-func NewCommitteeCoordinator(profileRegistry *ProfileRegistry, toolRegistry *tools.ToolRegistry) *CommitteeCoordinator {
-	base := NewBaseCoordinator("committee", profileRegistry, toolRegistry)
+func NewCommitteeCoordinator(profileRegistry *ProfileRegistry, agentBuilder *AgentBuilder) *CommitteeCoordinator {
+	base := NewBaseCoordinator("committee", profileRegistry, agentBuilder)
 	return &CommitteeCoordinator{
 		BaseCoordinator: base,
 		chairProfile:    TaskPlannerProfile,
