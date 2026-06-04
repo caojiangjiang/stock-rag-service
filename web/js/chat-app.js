@@ -403,10 +403,27 @@
     });
   }
 
+  function toggleMonitorMenu() {
+    const menu = document.getElementById('monitor-menu');
+    if (menu) {
+      menu.classList.toggle('show');
+    }
+  }
+
+  function closeMonitorMenu(event) {
+    const menu = document.getElementById('monitor-menu');
+    const monitorBtn = document.getElementById('monitor-btn');
+    if (menu && !monitorBtn?.contains(event.target) && !menu.contains(event.target)) {
+      menu.classList.remove('show');
+    }
+  }
+
   async function init() {
     renderUserHeader();
     bindComposer();
     document.getElementById('new-chat-btn')?.addEventListener('click', createNewConversation);
+    document.getElementById('monitor-btn')?.addEventListener('click', toggleMonitorMenu);
+    document.addEventListener('click', closeMonitorMenu);
     document.getElementById('logout-btn')?.addEventListener('click', () => Auth.logout());
     await loadConversations();
   }

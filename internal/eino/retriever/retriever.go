@@ -580,42 +580,66 @@ type mergedChunk struct {
 	source string // "vector" 或 "bm25"
 }
 
-// mergeAndRankChunks 合并并重新排序检索结果（支持 BGE-reranker 二阶段重排）
+// RRF 常数，通常取 60
+const rrfK = 60
+
+// mergeAndRankChunks 合并并重新排序检索结果（使用 RRF 算法，支持 BGE-reranker 二阶段重排）
 func (r HybridRetriever) mergeAndRankChunks(ctx context.Context, question string, vectorChunks, bm25Chunks []RetrievedChunk, topK int) []RetrievedChunk {
-	// 去重并计算综合分数
+	// 去重并计算 RRF 分数
 	chunkMap := make(map[string]*mergedChunk)
 
-	// 添加向量检索结果
+	// 先记录每个 chunk 在各检索方式中的排名
+	vectorRankMap := make(map[string]int)
+	for i, chunk := range vectorChunks {
+		key := chunk.Citation.Title + "|" + chunk.Citation.SourceURL
+		vectorRankMap[key] = i + 1 // RRF 使用 1-based 排名
+	}
+
+	bm25RankMap := make(map[string]int)
+	for i, chunk := range bm25Chunks {
+		key := chunk.Citation.Title + "|" + chunk.Citation.SourceURL
+		bm25RankMap[key] = i + 1 // RRF 使用 1-based 排名
+	}
+
+	// 添加向量检索结果并计算 RRF 分数
 	for i, chunk := range vectorChunks {
 		key := chunk.Citation.Title + "|" + chunk.Citation.SourceURL
 		if _, exists := chunkMap[key]; !exists {
-			// 向量检索分数：位置越靠前分数越高
-			score := 1.0 - float64(i)/float64(len(vectorChunks))
+			// RRF 分数计算: 1/(k + rank)
+			vectorRank := i + 1
+			bm25Rank, hasBM25 := bm25RankMap[key]
+			
+			score := 1.0 / float64(rrfK+vectorRank)
+			if hasBM25 {
+				score += 1.0 / float64(rrfK+bm25Rank)
+			}
+			
 			chunkMap[key] = &mergedChunk{
 				chunk:  chunk,
-				score:  score * 0.6, // 向量检索权重
+				score:  score,
 				source: "vector",
 			}
-		} else {
-			// 如果已经存在，增加分数
-			chunkMap[key].score += (1.0 - float64(i)/float64(len(vectorChunks))) * 0.6
 		}
 	}
 
-	// 添加BM25检索结果
+	// 添加 BM25 检索结果（处理只在 BM25 中出现的 chunk）
 	for i, chunk := range bm25Chunks {
 		key := chunk.Citation.Title + "|" + chunk.Citation.SourceURL
 		if _, exists := chunkMap[key]; !exists {
-			// BM25检索分数：位置越靠前分数越高
-			score := 1.0 - float64(i)/float64(len(bm25Chunks))
+			// RRF 分数计算: 1/(k + rank)
+			bm25Rank := i + 1
+			vectorRank, hasVector := vectorRankMap[key]
+			
+			score := 1.0 / float64(rrfK+bm25Rank)
+			if hasVector {
+				score += 1.0 / float64(rrfK+vectorRank)
+			}
+			
 			chunkMap[key] = &mergedChunk{
 				chunk:  chunk,
-				score:  score * 0.4, // BM25检索权重
+				score:  score,
 				source: "bm25",
 			}
-		} else {
-			// 如果已经存在，增加分数
-			chunkMap[key].score += (1.0 - float64(i)/float64(len(bm25Chunks))) * 0.4
 		}
 	}
 

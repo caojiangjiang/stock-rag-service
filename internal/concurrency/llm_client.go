@@ -304,6 +304,11 @@ func (c *LLMClient) GetChatModel() *einomodel.ChatModel {
 	return c.chatModel
 }
 
+// IsEnabled 检查底层模型是否启用了真实的 ARK 模型
+func (c *LLMClient) IsEnabled() bool {
+	return c != nil && c.chatModel != nil && c.chatModel.Enabled()
+}
+
 // Close 关闭 LLMClient
 func (c *LLMClient) Close() {
 	c.queueManager.Stop()

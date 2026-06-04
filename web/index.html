@@ -15,6 +15,48 @@
             </div>
             <div class="sidebar-actions">
                 <button type="button" class="btn btn-primary btn-block" id="new-chat-btn">+ 新对话</button>
+                <div class="monitor-dropdown">
+                    <button type="button" class="btn btn-secondary btn-block" id="monitor-btn">
+                        📊 监控面板 ▼
+                    </button>
+                    <div class="monitor-menu" id="monitor-menu">
+                        <a href="/monitor/" target="_blank" class="monitor-item">
+                            <span class="monitor-icon">📈</span>
+                            <div class="monitor-info">
+                                <span class="monitor-name">Grafana</span>
+                                <span class="monitor-desc">监控仪表盘</span>
+                            </div>
+                        </a>
+                        <a href="/prometheus/" target="_blank" class="monitor-item">
+                            <span class="monitor-icon">📉</span>
+                            <div class="monitor-info">
+                                <span class="monitor-name">Prometheus</span>
+                                <span class="monitor-desc">指标收集系统</span>
+                            </div>
+                        </a>
+                        <a href="/jaeger/" target="_blank" class="monitor-item">
+                            <span class="monitor-icon">🔍</span>
+                            <div class="monitor-info">
+                                <span class="monitor-name">Jaeger</span>
+                                <span class="monitor-desc">链路追踪</span>
+                            </div>
+                        </a>
+                        <a href="/tempo/" target="_blank" class="monitor-item">
+                            <span class="monitor-icon">🎯</span>
+                            <div class="monitor-info">
+                                <span class="monitor-name">Tempo</span>
+                                <span class="monitor-desc">分布式追踪</span>
+                            </div>
+                        </a>
+                        <a href="/loki/" target="_blank" class="monitor-item">
+                            <span class="monitor-icon">📋</span>
+                            <div class="monitor-info">
+                                <span class="monitor-name">Loki</span>
+                                <span class="monitor-desc">日志聚合</span>
+                            </div>
+                        </a>
+                    </div>
+                </div>
             </div>
             <div class="conversations-list" id="conversations-list"></div>
         </aside>

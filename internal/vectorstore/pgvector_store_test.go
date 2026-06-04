@@ -84,9 +84,9 @@ func TestNewPgVectorStore(t *testing.T) {
 	}
 	defer teardownTestDB(t)
 
-	// 测试连接
-	if store.conn == nil {
-		t.Fatalf("连接为空")
+	// 测试连接池
+	if store.pool == nil {
+		t.Fatalf("连接池为空")
 	}
 }
 

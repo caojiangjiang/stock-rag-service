@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"time"
 
 	"stock_rag/internal/repository"
@@ -136,27 +137,35 @@ func (s *RedisStore) AddEntityReference(ctx context.Context, conversationID stri
 	return s.Save(ctx, memory)
 }
 
-func (s *RedisStore) ResolveReference(ctx context.Context, conversationID string, _ string) (string, error) {
+func (s *RedisStore) GetRecentEntities(ctx context.Context, conversationID string, limit int) ([]*EntityReference, error) {
 	memory, err := s.Get(ctx, conversationID)
 	if err != nil {
-		return "", err
+		if err == ErrNotFound {
+			return nil, nil
+		}
+		return nil, err
 	}
 	if memory == nil || len(memory.EntityChain) == 0 {
-		return "", nil
+		return nil, nil
 	}
+
 	now := time.Now()
-	var mostRecent *EntityReference
+	var validRefs []*EntityReference
 	for _, ref := range memory.EntityChain {
 		if ref.ExpiresAt.After(now) {
-			if mostRecent == nil || ref.MentionTime.After(mostRecent.MentionTime) {
-				mostRecent = ref
-			}
+			validRefs = append(validRefs, ref)
 		}
 	}
-	if mostRecent == nil {
-		return "", nil
+
+	sort.Slice(validRefs, func(i, j int) bool {
+		return validRefs[j].MentionTime.Before(validRefs[i].MentionTime)
+	})
+
+	if len(validRefs) > limit {
+		validRefs = validRefs[:limit]
 	}
-	return mostRecent.Entity, nil
+
+	return validRefs, nil
 }
 
 func (s *RedisStore) Cleanup(ctx context.Context, conversationID string) error {

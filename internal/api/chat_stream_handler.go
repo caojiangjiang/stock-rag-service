@@ -3,7 +3,6 @@ package api
 import (
 	"encoding/json"
 	"net/http"
-	"strings"
 
 	"stock_rag/internal/agent"
 	"stock_rag/internal/observability"
@@ -48,10 +47,7 @@ func (h *ChatHandler) ChatStream(w http.ResponseWriter, r *http.Request) {
 	traceID := pkgctx.GenerateTraceID()
 	ctx = pkgctx.WithTraceID(ctx, traceID)
 
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-	w.Header().Set("X-Accel-Buffering", "no")
+	prepareSSEResponse(w)
 
 	resp, err := h.agentService.ChatStream(ctx, req, func(chunk string) error {
 		return writeSSE(w, flusher, "delta", streamEvent{Content: chunk})
@@ -97,13 +93,8 @@ func decodeChatRequest(r *http.Request) (*agent.ChatRequest, int, string) {
 		return nil, http.StatusBadRequest, "invalid request body"
 	}
 
-	req.Message = strings.TrimSpace(req.Message)
-	if req.Message == "" {
-		return nil, http.StatusBadRequest, "message is required"
-	}
-
-	if req.Mode != "" && !isValidChatMode(req.Mode) {
-		return nil, http.StatusBadRequest, "invalid mode"
+	if err := validateChatRequest(&req); err != nil {
+		return nil, http.StatusBadRequest, err.Error()
 	}
 
 	return &req, 0, ""

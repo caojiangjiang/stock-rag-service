@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"stock_rag/internal/metrics"
@@ -48,8 +49,12 @@ func (h *AgentHandler) ExecuteTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Task == "" {
-		http.Error(w, "缺少任务描述", http.StatusBadRequest)
+	req.Task = strings.TrimSpace(req.Task)
+	req.ConversationID = strings.TrimSpace(req.ConversationID)
+	req.SessionID = strings.TrimSpace(req.SessionID)
+	if err := validateAgentTask(req.Task, "", firstNonEmpty(req.ConversationID, req.SessionID)); err != nil {
+		auditRequestEvent(r, "agent.execute", "invalid_request", "user_id", userID, "error", err.Error())
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -66,8 +71,13 @@ func (h *AgentHandler) ExecuteTask(w http.ResponseWriter, r *http.Request) {
 	stockCode := ""
 	if req.Params != nil {
 		if sc, ok := req.Params["stock_code"].(string); ok {
-			stockCode = sc
+			stockCode = strings.TrimSpace(sc)
 		}
+	}
+	if err := validateAgentTask(req.Task, stockCode, conversationID); err != nil {
+		auditRequestEvent(r, "agent.execute", "invalid_request", "user_id", userID, "conversation_id", conversationID, "error", err.Error())
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
 	}
 
 	// 执行 Agent 任务（使用新的 Supervisor + Specialists 架构）
@@ -79,10 +89,12 @@ func (h *AgentHandler) ExecuteTask(w http.ResponseWriter, r *http.Request) {
 		StockCode:      stockCode,
 	})
 	if err != nil {
+		auditRequestEvent(r, "agent.execute", "failure", "user_id", userID, "conversation_id", conversationID, "stock_code", stockCode, "error", err.Error())
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
+	auditRequestEvent(r, "agent.execute", "success", "user_id", userID, "conversation_id", conversationID, "stock_code", stockCode)
 	// 返回响应
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -100,22 +112,27 @@ func (h *AgentHandler) ExecuteTask(w http.ResponseWriter, r *http.Request) {
 
 // AnalyzeStock 分析股票（使用 Supervisor + Specialists 架构）
 func (h *AgentHandler) AnalyzeStock(w http.ResponseWriter, r *http.Request) {
-	symbol := r.URL.Query().Get("symbol")
+	ctx := r.Context()
+	userID := UserIDFromRequest(ctx)
+	symbol := strings.TrimSpace(r.URL.Query().Get("symbol"))
 	if symbol == "" {
+		auditRequestEvent(r, "agent.analyze_stock", "invalid_request", "user_id", userID)
 		http.Error(w, "缺少股票代码", http.StatusBadRequest)
 		return
 	}
 
-	ctx := r.Context()
-	userID := UserIDFromRequest(ctx)
-
 	// 获取对话 ID（优先使用 conversation_id，兼容 session_id）
-	conversationID := r.URL.Query().Get("conversation_id")
+	conversationID := strings.TrimSpace(r.URL.Query().Get("conversation_id"))
 	if conversationID == "" {
-		conversationID = r.URL.Query().Get("session_id") // 兼容旧接口
+		conversationID = strings.TrimSpace(r.URL.Query().Get("session_id")) // 兼容旧接口
 	}
 	if conversationID == "" {
 		conversationID = fmt.Sprintf("conversation-%d", time.Now().UnixNano())
+	}
+	if err := validateAgentTask("analyze stock", symbol, conversationID); err != nil {
+		auditRequestEvent(r, "agent.analyze_stock", "invalid_request", "user_id", userID, "conversation_id", conversationID, "stock_code", symbol, "error", err.Error())
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
 	}
 
 	analyzeStart := time.Now()
@@ -132,6 +149,7 @@ func (h *AgentHandler) AnalyzeStock(w http.ResponseWriter, r *http.Request) {
 	elapsed := time.Since(analyzeStart).Seconds()
 	if err != nil {
 		metrics.RecordAgentComplexTask(endpoint, "error", elapsed)
+		auditRequestEvent(r, "agent.analyze_stock", "failure", "user_id", userID, "conversation_id", conversationID, "stock_code", symbol, "error", err.Error())
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -141,10 +159,12 @@ func (h *AgentHandler) AnalyzeStock(w http.ResponseWriter, r *http.Request) {
 	}
 	metrics.RecordAgentComplexTask(endpoint, status, elapsed)
 	if result != nil && result.Error != "" {
+		auditRequestEvent(r, "agent.analyze_stock", "failure", "user_id", userID, "conversation_id", conversationID, "stock_code", symbol, "error", result.Error)
 		http.Error(w, result.Error, http.StatusInternalServerError)
 		return
 	}
 
+	auditRequestEvent(r, "agent.analyze_stock", "success", "user_id", userID, "conversation_id", conversationID, "stock_code", symbol)
 	// 返回响应
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -233,8 +253,12 @@ func (h *AgentHandler) RunAgent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Task == "" {
-		http.Error(w, "缺少任务描述", http.StatusBadRequest)
+	req.Task = strings.TrimSpace(req.Task)
+	req.ConversationID = strings.TrimSpace(req.ConversationID)
+	req.SessionID = strings.TrimSpace(req.SessionID)
+	if err := validateAgentTask(req.Task, "", firstNonEmpty(req.ConversationID, req.SessionID)); err != nil {
+		auditRequestEvent(r, "agent.run", "invalid_request", "user_id", userID, "error", err.Error())
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -251,8 +275,13 @@ func (h *AgentHandler) RunAgent(w http.ResponseWriter, r *http.Request) {
 	stockCode := ""
 	if req.Params != nil {
 		if sc, ok := req.Params["stock_code"].(string); ok {
-			stockCode = sc
+			stockCode = strings.TrimSpace(sc)
 		}
+	}
+	if err := validateAgentTask(req.Task, stockCode, conversationID); err != nil {
+		auditRequestEvent(r, "agent.run", "invalid_request", "user_id", userID, "conversation_id", conversationID, "error", err.Error())
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
 	}
 
 	// 执行 Agent 任务（使用新的 Supervisor + Specialists 架构）
@@ -264,10 +293,12 @@ func (h *AgentHandler) RunAgent(w http.ResponseWriter, r *http.Request) {
 		StockCode:      stockCode,
 	})
 	if err != nil {
+		auditRequestEvent(r, "agent.run", "failure", "user_id", userID, "conversation_id", conversationID, "stock_code", stockCode, "error", err.Error())
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
+	auditRequestEvent(r, "agent.run", "success", "user_id", userID, "conversation_id", conversationID, "stock_code", stockCode)
 	// 返回响应
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -279,4 +310,13 @@ func (h *AgentHandler) RunAgent(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewEncoder(w).Encode(resp); err != nil {
 		return
 	}
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
 }

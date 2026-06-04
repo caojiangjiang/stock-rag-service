@@ -320,9 +320,11 @@ func initAuthService(pgConversationStore *repository.PostgresConversationStore, 
 		sessionStore = auth.NewMemorySessionStore()
 	}
 
-	jwtSecret := strings.TrimSpace(os.Getenv("JWT_SECRET"))
-	if jwtSecret == "" {
-		jwtSecret = "default-secret-key-change-in-production"
+	jwtSecret, err := resolveJWTSecret(os.Getenv("JWT_SECRET"), os.Getenv("GO_ENV"))
+	if err != nil {
+		log.Fatalf("Invalid JWT secret configuration: %v", err)
+	}
+	if strings.TrimSpace(os.Getenv("JWT_SECRET")) == "" {
 		log.Printf("Warning: Using default JWT secret. Set JWT_SECRET environment variable for production.")
 	}
 	cfg := auth.AuthServiceConfig{
@@ -338,6 +340,30 @@ func initAuthService(pgConversationStore *repository.PostgresConversationStore, 
 		log.Println("Warning: Redis unavailable, auth blacklist/refresh using in-memory store")
 	}
 	return auth.NewAuthServiceFromConfig(cfg), jwtSecret
+}
+
+func resolveJWTSecret(rawSecret, env string) (string, error) {
+	const defaultSecret = "default-secret-key-change-in-production"
+
+	secret := strings.TrimSpace(rawSecret)
+	production := strings.EqualFold(strings.TrimSpace(env), "production") || strings.EqualFold(strings.TrimSpace(env), "prod")
+	if secret == "" {
+		if production {
+			return "", fmt.Errorf("JWT_SECRET is required when GO_ENV=%s", env)
+		}
+		return defaultSecret, nil
+	}
+	if production && (secret == defaultSecret || isPlaceholderJWTSecret(secret) || len(secret) < 32) {
+		return "", fmt.Errorf("JWT_SECRET must be non-default and at least 32 characters when GO_ENV=%s", env)
+	}
+	return secret, nil
+}
+
+func isPlaceholderJWTSecret(secret string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(secret))
+	return strings.Contains(normalized, "your_") ||
+		strings.Contains(normalized, "change_me") ||
+		strings.Contains(normalized, "change-in-production")
 }
 
 // initRateLimiter 初始化限流器（Redis 可用时使用分布式限流，否则使用内存限流）
@@ -368,12 +394,13 @@ type ChatServiceDependencies struct {
 func initChatService(deps ChatServiceDependencies) *agent.ChatService {
 	// 初始化 LLM 分类器（提升复杂意图识别能力）
 	var llmClassifier router.LLMClassifier
-	if llm.GetLLMClient() != nil {
-		adapter := router.NewLLMClientAdapter(llm.GetLLMClient())
+	client := llm.GetLLMClient()
+	if client != nil && client.IsEnabled() {
+		adapter := router.NewLLMClientAdapter(client)
 		llmClassifier = router.NewLLMRouterClassifier(adapter)
 		log.Println("RouteEngine LLM classifier enabled")
 	} else {
-		log.Println("Warning: LLM client not available, RouteEngine using hard rules only")
+		log.Println("Warning: LLM client not enabled (no ARK_API_KEY/ARK_MODEL), RouteEngine using hard rules only")
 	}
 
 	routeEngine := router.NewRouteEngine(

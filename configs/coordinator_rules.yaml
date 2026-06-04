@@ -1,0 +1,106 @@
+# 协调器规则配置
+# 规则优先级：按顺序匹配，取置信度最高的规则
+# 修改后可通过热更新接口重新加载，无需重启服务
+
+rules:
+  - name: "coordinator_plan"
+    type: "plan"
+    keywords:
+      - "分步骤"
+      - "多步"
+      - "规划"
+      - "任务分解"
+      - "先查再"
+      - "连续步骤"
+      - "执行计划"
+      - "步骤1"
+    confidence: 0.92
+    reason: "命中 Plan 关键词"
+    min_complexity: 0.0
+
+  - name: "coordinator_pipeline"
+    type: "pipeline"
+    keywords:
+      - "固定流程"
+      - "标准流程"
+      - "按流程"
+      - "流水线"
+      - "依次"
+      - "先收集再分析"
+      - "检索后分析再总结"
+    confidence: 0.88
+    reason: "命中 Pipeline 关键词"
+    min_complexity: 0.0
+
+  - name: "coordinator_workflow"
+    type: "workflow"
+    keywords:
+      - "模板"
+      - "标准研报"
+      - "固定模板"
+      - "工作流"
+      - "SOP"
+    confidence: 0.86
+    reason: "命中 Workflow 关键词"
+    min_complexity: 0.0
+
+  - name: "coordinator_debate"
+    type: "debate"
+    keywords:
+      - "辩论"
+      - "正反"
+      - "多空"
+      - "争议"
+      - "看涨看跌"
+      - "支持与反对"
+    confidence: 0.85
+    reason: "命中 Debate 关键词"
+    min_complexity: 0.0
+
+  - name: "coordinator_committee"
+    type: "committee"
+    keywords:
+      - "合议"
+      - "委员会"
+      - "投票"
+      - "一致意见"
+      - "综合各方"
+    confidence: 0.85
+    reason: "命中 Committee 关键词"
+    min_complexity: 0.0
+
+  - name: "coordinator_peer"
+    type: "peer"
+    keywords:
+      - "并行分析"
+      - "独立分析"
+      - "多角度"
+      - "协商"
+      - "对等"
+      - "各自给出"
+    confidence: 0.83
+    reason: "命中 Peer 关键词"
+    min_complexity: 0.0
+
+  - name: "coordinator_supervisor_compare"
+    type: "supervisor"
+    keywords:
+      - "对比"
+      - "相比"
+      - "比较"
+      - "vs"
+      - "交叉验证"
+    confidence: 0.90
+    reason: "对比/验证类任务，主从调度"
+    min_complexity: 0.35
+
+  - name: "coordinator_deep"
+    type: "deep"
+    keywords:
+      - "深度研究"
+      - "全面尽调"
+      - "深挖"
+      - "详细研报"
+    confidence: 0.84
+    reason: "命中 Deep 关键词"
+    min_complexity: 0.55

@@ -2,6 +2,8 @@ package api
 
 import (
 	"net/http"
+	"net/http/httputil"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -85,10 +87,48 @@ func NewRouter(querySvc QueryService, taskAgentService *service.TaskAgentService
 
 	RegisterAuthRoutes(mux, authService, jwtSecret)
 
+	// 监控面板路由 - 反向代理到各个监控系统
+	mux.Handle("/monitor/", requireAdmin(createMonitorProxy("http://localhost:3000", "/monitor")))
+	mux.Handle("/prometheus/", requireAdmin(createMonitorProxy("http://localhost:9091", "/prometheus")))
+	mux.Handle("/jaeger/", requireAdmin(createMonitorProxy("http://localhost:16686", "/jaeger")))
+	mux.Handle("/tempo/", requireAdmin(createMonitorProxy("http://localhost:3200", "/tempo")))
+	mux.Handle("/loki/", requireAdmin(createMonitorProxy("http://localhost:3100", "/loki")))
+
 	// 静态文件服务，用于前端界面
 	mux.Handle("/", http.FileServer(http.Dir("web")))
 
 	return mux
+}
+
+// createMonitorProxy 创建监控系统的反向代理
+func createMonitorProxy(target string, prefix string) http.HandlerFunc {
+	targetURL, _ := url.Parse(target)
+	proxy := httputil.NewSingleHostReverseProxy(targetURL)
+
+	return func(w http.ResponseWriter, r *http.Request) {
+		// 修改请求路径，移除前缀
+		r.URL.Path = strings.TrimPrefix(r.URL.Path, prefix)
+		if r.URL.Path == "" {
+			r.URL.Path = "/"
+		}
+		r.Host = targetURL.Host
+
+		// 修改响应头，处理重定向
+		proxy.ModifyResponse = func(resp *http.Response) error {
+			if loc := resp.Header.Get("Location"); loc != "" {
+				// 将监控系统的重定向修改为通过前缀
+				resp.Header.Set("Location", prefix+loc)
+			}
+			return nil
+		}
+
+		proxy.ServeHTTP(w, r)
+	}
+}
+
+// monitorProxyHandler 创建监控面板的反向代理（保留兼容）
+func monitorProxyHandler() http.HandlerFunc {
+	return createMonitorProxy("http://localhost:3000", "/monitor")
 }
 
 // DefaultRoutes 返回第一版推荐接口清单。

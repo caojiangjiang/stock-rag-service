@@ -6,6 +6,7 @@ import (
 
 	"go.opentelemetry.io/otel/attribute"
 
+	"stock_rag/internal/memory/medium"
 	"stock_rag/internal/observability"
 	"stock_rag/internal/router"
 )
@@ -23,6 +24,7 @@ type ExecuteRequest struct {
 	MessageID       string
 	UserID          string
 	UserMessage     string
+	ResolvedMessage string
 	Mode            router.RouteMode
 	CoordinatorType string
 	RouteConfidence float64
@@ -31,6 +33,7 @@ type ExecuteRequest struct {
 	DocType         string
 	TimeRange       string
 	OnChunk         func(string) error
+	ConfirmedFacts  []*medium.ConfirmedFact
 }
 
 type ExecuteResponse struct {

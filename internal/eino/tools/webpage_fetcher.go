@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -75,20 +76,18 @@ func (t *TypedWebpageFetcher) Run(ctx context.Context, req *FetchWebpageRequest)
 		req.ExtractMode = "text"
 	}
 
-	content, err := t.fetchURL(ctx, req.URL)
+	page, err := t.fetchURL(ctx, req.URL)
 	if err != nil {
 		return nil, fmt.Errorf("抓取网页失败: %w", err)
 	}
 
-	title := extractTitle(content)
+	content := page.Content
 
-	if len(content) > req.MaxLength {
-		content = content[:req.MaxLength] + "..."
-	}
+	content = truncateText(content, req.MaxLength)
 
 	return &FetchWebpageResponse{
 		URL:         req.URL,
-		Title:       title,
+		Title:       page.Title,
 		Content:     content,
 		ContentType: req.ExtractMode,
 		Length:      len(content),
@@ -118,19 +117,24 @@ func (t *TypedWebpageFetcher) Invoke(ctx context.Context, args map[string]interf
 	return string(data), nil
 }
 
-func (t *TypedWebpageFetcher) fetchURL(ctx context.Context, urlStr string) (string, error) {
+type fetchedPage struct {
+	Title   string
+	Content string
+}
+
+func (t *TypedWebpageFetcher) fetchURL(ctx context.Context, urlStr string) (*fetchedPage, error) {
 	parsedURL, err := url.Parse(urlStr)
 	if err != nil {
-		return "", fmt.Errorf("无效的URL: %w", err)
+		return nil, fmt.Errorf("无效的URL: %w", err)
 	}
 
-	if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
-		return "", fmt.Errorf("不支持的协议: %s", parsedURL.Scheme)
+	if err := validateFetchURL(parsedURL); err != nil {
+		return nil, err
 	}
 
 	req, err := http.NewRequestWithContext(ctx, "GET", urlStr, nil)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
@@ -139,17 +143,17 @@ func (t *TypedWebpageFetcher) fetchURL(ctx context.Context, urlStr string) (stri
 
 	resp, err := t.client.Do(req)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("HTTP请求失败: %d", resp.StatusCode)
+		return nil, fmt.Errorf("HTTP请求失败: %d", resp.StatusCode)
 	}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	contentType := resp.Header.Get("Content-Type")
@@ -157,7 +161,11 @@ func (t *TypedWebpageFetcher) fetchURL(ctx context.Context, urlStr string) (stri
 		body, _ = decodeGBK(body)
 	}
 
-	return extractTextFromHTML(string(body)), nil
+	html := string(body)
+	return &fetchedPage{
+		Title:   extractTitle(html),
+		Content: extractTextFromHTML(html),
+	}, nil
 }
 
 func extractTitle(html string) string {
@@ -167,6 +175,36 @@ func extractTitle(html string) string {
 		return strings.TrimSpace(match[1])
 	}
 	return ""
+}
+
+func validateFetchURL(parsedURL *url.URL) error {
+	if parsedURL == nil {
+		return fmt.Errorf("无效的URL")
+	}
+	if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
+		return fmt.Errorf("不支持的协议: %s", parsedURL.Scheme)
+	}
+	host := strings.TrimSpace(parsedURL.Hostname())
+	if host == "" {
+		return fmt.Errorf("URL host不能为空")
+	}
+	normalizedHost := strings.ToLower(strings.Trim(host, "[]"))
+	if normalizedHost == "localhost" || strings.HasSuffix(normalizedHost, ".localhost") {
+		return fmt.Errorf("禁止抓取本地地址")
+	}
+	if ip := net.ParseIP(normalizedHost); ip != nil && isBlockedFetchIP(ip) {
+		return fmt.Errorf("禁止抓取内网或本地地址")
+	}
+	return nil
+}
+
+func isBlockedFetchIP(ip net.IP) bool {
+	return ip.IsLoopback() ||
+		ip.IsPrivate() ||
+		ip.IsLinkLocalUnicast() ||
+		ip.IsLinkLocalMulticast() ||
+		ip.IsMulticast() ||
+		ip.IsUnspecified()
 }
 
 func extractTextFromHTML(html string) string {
@@ -216,6 +254,17 @@ func stripHTML(html string) string {
 	text = strings.ReplaceAll(text, "\n", " ")
 	text = strings.ReplaceAll(text, "\r", " ")
 	return strings.Join(strings.Fields(text), " ")
+}
+
+func truncateText(text string, maxLength int) string {
+	if maxLength <= 0 {
+		return text
+	}
+	runes := []rune(text)
+	if len(runes) <= maxLength {
+		return text
+	}
+	return string(runes[:maxLength]) + "..."
 }
 
 func decodeGBK(data []byte) ([]byte, error) {
@@ -276,9 +325,7 @@ func (t *WebpageFetcher) Run(ctx context.Context, args map[string]interface{}) (
 		return "", err
 	}
 
-	if len(content) > maxLength {
-		content = content[:maxLength] + "..."
-	}
+	content = truncateText(content, maxLength)
 
 	result := map[string]interface{}{
 		"url":     urlStr,
@@ -296,8 +343,8 @@ func (t *WebpageFetcher) fetchURL(ctx context.Context, urlStr string) (string, e
 		return "", fmt.Errorf("无效的URL: %w", err)
 	}
 
-	if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
-		return "", fmt.Errorf("不支持的协议: %s", parsedURL.Scheme)
+	if err := validateFetchURL(parsedURL); err != nil {
+		return "", err
 	}
 
 	req, err := http.NewRequestWithContext(ctx, "GET", urlStr, nil)

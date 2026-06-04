@@ -12,7 +12,9 @@
 # 文档
 *.md
 !README.md
-docs/
+!docs/
+docs/*
+!docs/optimization_plan.md
 
 # 测试目录（集成测试脚本等，非 Go 单测）
 test/

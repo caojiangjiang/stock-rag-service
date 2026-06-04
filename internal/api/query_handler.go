@@ -47,6 +47,10 @@ func QueryHandler(svc QueryService) http.HandlerFunc {
 			writeJSON(w, http.StatusBadRequest, ErrorResponse{Error: "invalid request body"})
 			return
 		}
+		if err := validateRAGQueryRequest(&req); err != nil {
+			writeJSON(w, http.StatusBadRequest, ErrorResponse{Error: err.Error()})
+			return
+		}
 
 		resp, err := svc.Query(r.Context(), req)
 		if err != nil {

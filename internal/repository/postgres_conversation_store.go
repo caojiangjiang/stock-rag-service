@@ -8,8 +8,8 @@ import (
 
 	"stock_rag/internal/pkgctx"
 
-	"github.com/jackc/pgx/v4"
-	"github.com/jackc/pgx/v4/pgxpool"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type PostgresConversationStore struct {
@@ -35,7 +35,7 @@ func NewPostgresConversationStore(host, port, user, password, database, sslmode 
 	config.MaxConnIdleTime = 10 * time.Minute  // 连接最大空闲时间
 	config.HealthCheckPeriod = 1 * time.Minute // 健康检查周期
 
-	db, err := pgxpool.ConnectConfig(context.Background(), config)
+	db, err := pgxpool.NewWithConfig(context.Background(), config)
 	if err != nil {
 		return nil, err
 	}

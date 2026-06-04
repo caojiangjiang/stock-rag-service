@@ -41,11 +41,12 @@ func QueryStreamHandler(svc QueryService) http.HandlerFunc {
 			writeJSON(w, http.StatusBadRequest, ErrorResponse{Error: "invalid request body"})
 			return
 		}
+		if err := validateRAGQueryRequest(&req); err != nil {
+			writeJSON(w, http.StatusBadRequest, ErrorResponse{Error: err.Error()})
+			return
+		}
 
-		w.Header().Set("Content-Type", "text/event-stream")
-		w.Header().Set("Cache-Control", "no-cache")
-		w.Header().Set("Connection", "keep-alive")
-		w.Header().Set("X-Accel-Buffering", "no")
+		prepareSSEResponse(w)
 
 		resp, err := svc.QueryStream(r.Context(), req, func(chunk string) error {
 			return writeSSE(w, flusher, "delta", streamEvent{Content: chunk})
@@ -57,6 +58,13 @@ func QueryStreamHandler(svc QueryService) http.HandlerFunc {
 
 		_ = writeSSE(w, flusher, "done", resp)
 	}
+}
+
+func prepareSSEResponse(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
 }
 
 func writeSSE(w http.ResponseWriter, flusher http.Flusher, event string, payload any) error {

@@ -50,7 +50,7 @@ type Store interface {
 	AppendMessage(ctx context.Context, conversationID string, msg *repository.Message) error
 	UpdateTaskState(ctx context.Context, conversationID string, state *TaskState) error
 	AddEntityReference(ctx context.Context, conversationID string, ref *EntityReference) error
-	ResolveReference(ctx context.Context, conversationID string, pronoun string) (string, error)
+	GetRecentEntities(ctx context.Context, conversationID string, limit int) ([]*EntityReference, error)
 	GetTaskState(ctx context.Context, conversationID string) (*TaskState, error)
 	SetCurrentFocus(ctx context.Context, conversationID, focus string) error
 	GetCurrentFocus(ctx context.Context, conversationID string) (string, error)
