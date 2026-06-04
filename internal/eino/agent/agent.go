@@ -19,7 +19,7 @@ import (
 //
 // 当前项目存在两套 Agent 抽象体系：
 // 【自定义抽象】（此文件）
-//   - Agent、Tool、Runner、CoordinatorType
+//   - Agent、Tool（CoordinatorType 见 coordinator.go）
 // 【Eino 原生抽象】（推荐使用）
 //   - adk.Agent、tool.BaseTool、model.ChatModel、compose.Workflow
 //
@@ -63,11 +63,6 @@ type Tool interface {
 	Name() string
 	Description() string
 	Run(ctx context.Context, args map[string]interface{}) (string, error)
-}
-
-// Runner 运行器接口
-type Runner interface {
-	Run(ctx context.Context, task string) (string, error)
 }
 
 // Agent Agent 结构体
