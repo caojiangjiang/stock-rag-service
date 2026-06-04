@@ -51,3 +51,83 @@ groups:
         annotations:
           summary: "stock_rag Chat 错误率过高"
           description: "按路由模式的 Chat 请求错误率超过 10%"
+
+      # ========== Persona 专属报警规则 ==========
+
+      - alert: PersonaChatErrorRateHigh
+        expr: |
+          sum(rate(persona_chat_requests_total{status="error"}[5m]))
+          /
+          sum(rate(persona_chat_requests_total[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Persona Chat 错误率过高"
+          description: "过去 5 分钟 Persona Chat 请求错误率超过 5%"
+
+      - alert: PersonaChatHighLatencyP95
+        expr: histogram_quantile(0.95, sum(rate(persona_chat_duration_seconds_bucket[5m])) by (le)) > 15
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Persona Chat P95 延迟过高"
+          description: "Persona Chat 请求 P95 超过 15s"
+
+      - alert: PersonaChatCitationMissingRateHigh
+        expr: |
+          sum(rate(persona_chat_requests_total[5m])) - sum(rate(persona_chat_citations_count_bucket{le="+Inf"}[5m]))
+          /
+          sum(rate(persona_chat_requests_total[5m])) > 0.3
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Persona Chat Citation 缺失率过高"
+          description: "过去 10 分钟超过 30% 的 Persona Chat 请求没有引用来源"
+
+      - alert: PersonaChatRefusalRateHigh
+        expr: |
+          sum(rate(persona_chat_refusals_total[5m]))
+          /
+          sum(rate(persona_chat_requests_total[5m])) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Persona Chat 拒答率过高"
+          description: "过去 5 分钟超过 10% 的 Persona Chat 请求被安全拦截"
+
+      - alert: PersonaRoundtableErrorRateHigh
+        expr: |
+          sum(rate(persona_roundtable_requests_total{status="error"}[5m]))
+          /
+          sum(rate(persona_roundtable_requests_total[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Persona Roundtable 错误率过高"
+          description: "过去 5 分钟 Persona Roundtable 请求错误率超过 5%"
+
+      - alert: PersonaRoundtableHighLatencyP95
+        expr: histogram_quantile(0.95, sum(rate(persona_roundtable_duration_seconds_bucket[5m])) by (le)) > 60
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Persona Roundtable P95 延迟过高"
+          description: "Persona Roundtable 请求 P95 超过 60s"
+
+      - alert: PersonaRoundtablePartialFailureRateHigh
+        expr: |
+          sum(rate(persona_roundtable_partial_failures_total[5m]))
+          /
+          sum(rate(persona_roundtable_requests_total[5m])) > 0.2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Persona Roundtable 部分失败率过高"
+          description: "过去 5 分钟超过 20% 的 Persona Roundtable 请求存在部分参与者失败"

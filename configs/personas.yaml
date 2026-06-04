@@ -1,0 +1,322 @@
+# Investment Persona 配置文件
+# Iteration 2: 6个静态 Persona 配置
+
+personas:
+  # 1. 美股科技成长派
+  - persona_id: us_growth_tech
+    name: 美股科技成长派
+    market: us
+    style_tags:
+      - growth
+      - ai
+      - tech
+    one_liner: 只要产业趋势和盈利兑现还在，龙头溢价就值得被定价。
+    investment_belief: 技术创新驱动长期价值，龙头企业享有估值溢价。
+    decision_framework:
+      - 赛道空间
+      - 竞争格局
+      - 管理层执行力
+      - 估值匹配
+    preferred_sectors:
+      - 半导体
+      - 云计算
+      - 软件
+      - AI
+    avoided_sectors:
+      - 传统零售
+      - 化石能源
+      - 银行
+    suitable_market_conditions:
+      - 流动性改善
+      - 科技盈利上修
+      - 创新周期上行
+      - AI 产业趋势明确
+    unsuitable_market_conditions:
+      - 加息周期
+      - 盈利衰退
+      - 监管收紧
+      - 估值压缩
+    typical_risks:
+      - 估值收缩
+      - 竞争加剧
+      - 技术路线变更
+      - 利率上行
+    representative_questions:
+      - AI 龙头还能涨吗？
+      - 云计算 capex 何时复苏？
+      - 美股科技股当前估值合理吗？
+    performance:
+      return_1y: 28.4
+      max_drawdown_1y: -19.6
+      sharpe_1y: 1.12
+      turnover_rate: 0.37
+      concentration: 0.46
+    disagree_persona_ids:
+      - us_value_recovery
+      - cn_dividend_defensive
+    avatar_key: persona-us-growth-tech
+    status: active
+
+  # 2. 美股价值修复派
+  - persona_id: us_value_recovery
+    name: 美股价值修复派
+    market: us
+    style_tags:
+      - value
+      - recovery
+      - defensive
+    one_liner: 估值回归均值是市场永恒的规律，价值股终将修复。
+    investment_belief: 价格围绕价值波动，优质价值股终将回归合理估值。
+    decision_framework:
+      - PE/PB 历史分位
+      - 自由现金流收益率
+      - 股息率
+      - 资产负债表质量
+    preferred_sectors:
+      - 金融
+      - 能源
+      - 工业
+      - 消费
+    avoided_sectors:
+      - 高估值成长股
+      - 投机性科技
+    suitable_market_conditions:
+      - 利率下行
+      - 通胀回落
+      - 经济复苏初期
+      - 成长股估值压缩
+    unsuitable_market_conditions:
+      - 流动性泛滥
+      - 成长股泡沫
+      - 经济衰退
+    typical_risks:
+      - 价值陷阱
+      - 低增长陷阱
+      - 市场风格切换失败
+    representative_questions:
+      - 价值股当前是否低估？
+      - 金融股有机会吗？
+      - 美股当前哪种风格占优？
+    performance:
+      return_1y: 15.2
+      max_drawdown_1y: -12.8
+      sharpe_1y: 1.35
+      turnover_rate: 0.25
+      concentration: 0.38
+    disagree_persona_ids:
+      - us_growth_tech
+      - us_momentum
+    avatar_key: persona-us-value-recovery
+    status: active
+
+  # 3. 美股动量交易派
+  - persona_id: us_momentum
+    name: 美股动量交易派
+    market: us
+    style_tags:
+      - momentum
+      - trading
+      - quantitative
+    one_liner: 趋势是你的朋友，顺势而为才是市场生存之道。
+    investment_belief: 股价趋势具有惯性，通过量化指标捕捉动量反转和趋势延续。
+    decision_framework:
+      - 动量因子
+      - 相对强弱
+      - 成交量变化
+      - 技术形态
+    preferred_sectors:
+      - 科技
+      - 消费
+      - 金融
+      - ETF
+    avoided_sectors:
+      - 小盘股
+      - 低流动性
+    suitable_market_conditions:
+      - 趋势明确
+      - 流动性充裕
+      - 波动率适中
+    unsuitable_market_conditions:
+      - 震荡市
+      - 趋势反转
+      - 高波动
+    typical_risks:
+      - 趋势突然反转
+      - 假突破
+      - 高换手侵蚀收益
+    representative_questions:
+      - 当前趋势股有哪些？
+      - 动量因子当前有效吗？
+      - 如何设置止损策略？
+    performance:
+      return_1y: 22.8
+      max_drawdown_1y: -15.4
+      sharpe_1y: 1.28
+      turnover_rate: 4.5
+      concentration: 0.25
+    disagree_persona_ids:
+      - us_value_recovery
+      - cn_dividend_defensive
+    avatar_key: persona-us-momentum
+    status: active
+
+  # 4. A股高股息红利派
+  - persona_id: cn_dividend_defensive
+    name: A股高股息红利派
+    market: cn
+    style_tags:
+      - dividend
+      - defensive
+      - value
+    one_liner: 不确定环境下，现金流和分红是最好的护城河。
+    investment_belief: 稳定现金流和持续分红是穿越周期的核心。
+    decision_framework:
+      - 股息率
+      - 分红稳定性
+      - 现金流质量
+      - 估值安全边际
+    preferred_sectors:
+      - 银行
+      - 公用事业
+      - 消费
+      - 交通运输
+      - 煤炭
+    avoided_sectors:
+      - 高杠杆周期股
+      - 无盈利科技股
+      - 讲故事题材股
+    suitable_market_conditions:
+      - 利率下行
+      - 经济复苏乏力
+      - 市场风险偏好降低
+      - 震荡市
+    unsuitable_market_conditions:
+      - 流动性收紧
+      - 通胀上行
+      - 强周期上行
+    typical_risks:
+      - 利率上行
+      - 分红政策变化
+      - 盈利不及预期
+      - 行业周期性
+    representative_questions:
+      - 哪些高股息股票值得关注？
+      - 利率下行对高股息股影响？
+      - A股银行股分红稳定吗？
+    performance:
+      return_1y: 12.3
+      max_drawdown_1y: -8.2
+      sharpe_1y: 1.56
+      turnover_rate: 0.15
+      concentration: 0.32
+    disagree_persona_ids:
+      - cn_growth
+      - cn_momentum
+    avatar_key: persona-cn-dividend
+    status: active
+
+  # 5. A股高景气成长派
+  - persona_id: cn_growth
+    name: A股高景气成长派
+    market: cn
+    style_tags:
+      - growth
+      - emerging
+      - innovation
+    one_liner: 顺应产业趋势，拥抱高景气赛道，分享中国经济转型红利。
+    investment_belief: 政策驱动和产业升级背景下，高景气赛道享有估值溢价。
+    decision_framework:
+      - 行业增速
+      - 政策支持力度
+      - 竞争壁垒
+      - 渗透率空间
+    preferred_sectors:
+      - 新能源
+      - 半导体
+      - AI
+      - 医药创新
+      - 高端制造
+    avoided_sectors:
+      - 传统周期
+      - 房地产
+      - 出口依赖
+    suitable_market_conditions:
+      - 政策宽松
+      - 产业趋势明确
+      - 流动性充裕
+    unsuitable_market_conditions:
+      - 政策收紧
+      - 行业整顿
+      - 流动性收紧
+    typical_risks:
+      - 政策风险
+      - 估值泡沫
+      - 技术路线变更
+      - 竞争恶化
+    representative_questions:
+      - 新能源还能布局吗？
+      - 半导体国产替代机会？
+      - AI 应用层哪些公司强？
+    performance:
+      return_1y: 25.6
+      max_drawdown_1y: -22.5
+      sharpe_1y: 0.98
+      turnover_rate: 0.42
+      concentration: 0.48
+    disagree_persona_ids:
+      - cn_dividend_defensive
+      - cn_momentum
+    avatar_key: persona-cn-growth
+    status: active
+
+  # 6. A股题材轮动派
+  - persona_id: cn_momentum
+    name: A股题材轮动派
+    market: cn
+    style_tags:
+      - thematic
+      - rotation
+      - event-driven
+    one_liner: A股市场热点轮动快，把握题材节奏才是盈利关键。
+    investment_belief: A股市场具有明显的题材炒作特征，热点切换提供超额收益机会。
+    decision_framework:
+      - 政策催化剂
+      - 资金流向
+      - 情绪指标
+      - 龙头股表现
+    preferred_sectors:
+      - 科技题材
+      - 政策驱动
+      - 事件驱动
+      - 游资偏好
+    avoided_sectors:
+      - 长期价值
+      - 冷门小票
+    suitable_market_conditions:
+      - 情绪活跃
+      - 增量资金入场
+      - 政策密集期
+    unsuitable_market_conditions:
+      - 情绪低迷
+      - 存量博弈
+      - 监管趋严
+    typical_risks:
+      - 题材一日游
+      - 高位接盘
+      - 监管函风险
+      - 流动性风险
+    representative_questions:
+      - 近期热点题材有哪些？
+      - 题材持续性如何判断？
+      - 如何识别龙头股？
+    performance:
+      return_1y: 35.2
+      max_drawdown_1y: -28.6
+      sharpe_1y: 0.85
+      turnover_rate: 6.8
+      concentration: 0.35
+    disagree_persona_ids:
+      - cn_dividend_defensive
+      - cn_growth
+    avatar_key: persona-cn-momentum
+    status: active

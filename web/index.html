@@ -3,56 +3,50 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Stock RAG</title>
-    <link rel="stylesheet" href="css/app.css?v=3">
+    <title>Stock RAG - 股票智能分析助手</title>
+    <link rel="stylesheet" href="css/app.css?v=5">
 </head>
 <body>
     <div class="app-shell">
         <aside class="sidebar">
             <div class="sidebar-brand">
                 <h1>Stock RAG</h1>
-                <p>股票信息查询与分析</p>
+                <p>智能股票分析助手</p>
             </div>
             <div class="sidebar-actions">
-                <button type="button" class="btn btn-primary btn-block" id="new-chat-btn">+ 新对话</button>
+                <button type="button" class="btn btn-primary btn-block" id="new-chat-btn">
+                    <span>+</span> 新对话
+                </button>
+                <a href="personas.html" class="btn btn-secondary btn-block">
+                    👥 投资角色
+                </a>
+                <a href="persona-daily-picks.html" class="btn btn-secondary btn-block">
+                    📊 选股推荐
+                </a>
                 <div class="monitor-dropdown">
-                    <button type="button" class="btn btn-secondary btn-block" id="monitor-btn">
+                    <button type="button" class="btn btn-ghost btn-block" id="monitor-btn">
                         📊 监控面板 ▼
                     </button>
                     <div class="monitor-menu" id="monitor-menu">
-                        <a href="/monitor/" target="_blank" class="monitor-item">
+                        <a href="http://localhost:3000" target="_blank" class="monitor-item">
                             <span class="monitor-icon">📈</span>
                             <div class="monitor-info">
                                 <span class="monitor-name">Grafana</span>
                                 <span class="monitor-desc">监控仪表盘</span>
                             </div>
                         </a>
-                        <a href="/prometheus/" target="_blank" class="monitor-item">
+                        <a href="http://localhost:9091" target="_blank" class="monitor-item">
                             <span class="monitor-icon">📉</span>
                             <div class="monitor-info">
                                 <span class="monitor-name">Prometheus</span>
                                 <span class="monitor-desc">指标收集系统</span>
                             </div>
                         </a>
-                        <a href="/jaeger/" target="_blank" class="monitor-item">
+                        <a href="http://localhost:16686" target="_blank" class="monitor-item">
                             <span class="monitor-icon">🔍</span>
                             <div class="monitor-info">
                                 <span class="monitor-name">Jaeger</span>
                                 <span class="monitor-desc">链路追踪</span>
-                            </div>
-                        </a>
-                        <a href="/tempo/" target="_blank" class="monitor-item">
-                            <span class="monitor-icon">🎯</span>
-                            <div class="monitor-info">
-                                <span class="monitor-name">Tempo</span>
-                                <span class="monitor-desc">分布式追踪</span>
-                            </div>
-                        </a>
-                        <a href="/loki/" target="_blank" class="monitor-item">
-                            <span class="monitor-icon">📋</span>
-                            <div class="monitor-info">
-                                <span class="monitor-name">Loki</span>
-                                <span class="monitor-desc">日志聚合</span>
                             </div>
                         </a>
                     </div>
@@ -65,33 +59,35 @@
             <header class="topbar">
                 <h2 class="topbar-title" id="current-conversation-title">新对话</h2>
                 <div class="topbar-user">
-                    <span class="user-badge" id="username-display"></span>
+                    <div class="user-avatar" id="user-avatar">U</div>
+                    <span id="username-display"></span>
                     <button type="button" class="btn btn-ghost" id="logout-btn">退出</button>
                 </div>
             </header>
 
             <div class="chat-scroll" id="chat-container">
                 <div class="empty-state" id="empty-state">
+                    <div class="empty-state-icon">📈</div>
                     <h3>开始新对话</h3>
-                    <p>点击左侧「新对话」，或选择历史会话继续</p>
+                    <p>点击左侧「新对话」开始，或选择历史会话继续交流</p>
                 </div>
             </div>
 
             <footer class="composer">
                 <div class="composer-inner">
-                    <textarea id="message-input" rows="1" placeholder="输入股票相关问题… Enter 发送，Shift+Enter 换行"></textarea>
-                    <button type="button" class="btn btn-primary" id="send-button">发送</button>
+                    <textarea id="message-input" rows="1" placeholder="输入股票相关问题…"></textarea>
+                    <button type="button" class="send-button" id="send-button" title="发送">→</button>
                 </div>
-                <p class="composer-hint">流式响应：回答将逐字显示</p>
+                <p class="composer-hint">Enter 发送，Shift+Enter 换行 | 流式响应</p>
             </footer>
         </main>
     </div>
 
-    <script src="js/vendor/marked.min.js?v=3"></script>
-    <script src="js/vendor/purify.min.js?v=3"></script>
-    <script src="js/markdown.js?v=3"></script>
+    <script src="js/vendor/marked.min.js?v=4"></script>
+    <script src="js/vendor/purify.min.js?v=4"></script>
+    <script src="js/markdown.js?v=4"></script>
     <script src="js/auth.js"></script>
-    <script src="js/chat-app.js?v=3"></script>
+    <script src="js/chat-app.js?v=4"></script>
     <script>
         document.addEventListener('DOMContentLoaded', async () => {
             const ok = await Auth.ensureAuthenticated({ redirect: true });

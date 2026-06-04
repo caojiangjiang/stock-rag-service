@@ -1,0 +1,608 @@
+# 每日风格选股候选池
+# MVP 版本：人工维护的重点股票池
+
+# 美股候选池
+us:
+  # === 科技/AI/半导体 ===
+  - symbol: "NVDA"
+    company_name: "NVIDIA Corporation"
+    sector_tags: ["AI", "半导体", "GPU", "数据中心", "成长"]
+
+  - symbol: "MSFT"
+    company_name: "Microsoft Corporation"
+    sector_tags: ["AI", "云", "软件", "企业服务", "成长"]
+
+  - symbol: "GOOGL"
+    company_name: "Alphabet Inc."
+    sector_tags: ["AI", "云", "广告", "搜索", "成长"]
+
+  - symbol: "META"
+    company_name: "Meta Platforms Inc."
+    sector_tags: ["AI", "社交", "广告", "元宇宙", "成长"]
+
+  - symbol: "TSLA"
+    company_name: "Tesla Inc."
+    sector_tags: ["新能源汽车", "自动驾驶", "能源", "AI", "成长"]
+
+  - symbol: "AMD"
+    company_name: "Advanced Micro Devices Inc."
+    sector_tags: ["半导体", "GPU", "CPU", "数据中心", "成长"]
+
+  - symbol: "INTC"
+    company_name: "Intel Corporation"
+    sector_tags: ["半导体", "CPU", "数据中心", "代工", "价值"]
+
+  - symbol: "CRM"
+    company_name: "Salesforce Inc."
+    sector_tags: ["SaaS", "云", "企业软件", "AI", "成长"]
+
+  - symbol: "ORCL"
+    company_name: "Oracle Corporation"
+    sector_tags: ["数据库", "云", "企业软件", "AI", "价值"]
+
+  - symbol: "AAPL"
+    company_name: "Apple Inc."
+    sector_tags: ["科技", "消费电子", "AI", "软件", "成长"]
+
+  - symbol: "AMZN"
+    company_name: "Amazon.com Inc."
+    sector_tags: ["电商", "云", "AI", "物流", "成长"]
+
+  - symbol: "AVGO"
+    company_name: "Broadcom Inc."
+    sector_tags: ["半导体", "AI", "网络", "数据中心", "成长"]
+
+  - symbol: "QCOM"
+    company_name: "QUALCOMM Incorporated"
+    sector_tags: ["半导体", "通信", "移动", "AI", "成长"]
+
+  - symbol: "TXN"
+    company_name: "Texas Instruments Incorporated"
+    sector_tags: ["半导体", "模拟芯片", "工业", "价值"]
+
+  - symbol: "MU"
+    company_name: "Micron Technology Inc."
+    sector_tags: ["半导体", "存储", "内存", "成长"]
+
+  - symbol: "AMAT"
+    company_name: "Applied Materials Inc."
+    sector_tags: ["半导体设备", "制造", "成长"]
+
+  - symbol: "LRCX"
+    company_name: "Lam Research Corporation"
+    sector_tags: ["半导体设备", "制造", "成长"]
+
+  - symbol: "KLAC"
+    company_name: "KLA Corporation"
+    sector_tags: ["半导体设备", "检测", "成长"]
+
+  - symbol: "SNPS"
+    company_name: "Synopsys Inc."
+    sector_tags: ["EDA软件", "半导体", "AI", "成长"]
+
+  - symbol: "CDNS"
+    company_name: "Cadence Design Systems Inc."
+    sector_tags: ["EDA软件", "半导体", "AI", "成长"]
+
+  # === 金融/银行 ===
+  - symbol: "JPM"
+    company_name: "JPMorgan Chase & Co."
+    sector_tags: ["银行", "金融", "科技金融", "价值"]
+
+  - symbol: "BAC"
+    company_name: "Bank of America Corp."
+    sector_tags: ["银行", "金融", "消费金融", "价值"]
+
+  - symbol: "WFC"
+    company_name: "Wells Fargo & Company"
+    sector_tags: ["银行", "金融", "社区银行", "价值"]
+
+  - symbol: "GS"
+    company_name: "The Goldman Sachs Group"
+    sector_tags: ["投行", "金融", "资管", "价值"]
+
+  - symbol: "MS"
+    company_name: "Morgan Stanley"
+    sector_tags: ["投行", "金融", "资管", "价值"]
+
+  - symbol: "C"
+    company_name: "Citigroup Inc."
+    sector_tags: ["银行", "金融", "全球银行", "价值"]
+
+  - symbol: "USB"
+    company_name: "U.S. Bancorp"
+    sector_tags: ["银行", "金融", "区域银行", "价值"]
+
+  - symbol: "PNC"
+    company_name: "The PNC Financial Services Group"
+    sector_tags: ["银行", "金融", "区域银行", "价值"]
+
+  - symbol: "BLK"
+    company_name: "BlackRock Inc."
+    sector_tags: ["资管", "金融", "ETF", "价值"]
+
+  - symbol: "SCHW"
+    company_name: "The Charles Schwab Corporation"
+    sector_tags: ["券商", "金融", "资管", "价值"]
+
+  # === 能源/石油 ===
+  - symbol: "XOM"
+    company_name: "Exxon Mobil Corporation"
+    sector_tags: ["能源", "石油", "化工", "价值", "股息"]
+
+  - symbol: "CVX"
+    company_name: "Chevron Corporation"
+    sector_tags: ["能源", "石油", "天然气", "价值", "股息"]
+
+  - symbol: "COP"
+    company_name: "ConocoPhillips"
+    sector_tags: ["能源", "石油", "勘探", "价值"]
+
+  - symbol: "SLB"
+    company_name: "Schlumberger NV"
+    sector_tags: ["能源服务", "石油", "设备", "价值"]
+
+  - symbol: "EOG"
+    company_name: "EOG Resources Inc."
+    sector_tags: ["能源", "石油", "页岩油", "价值"]
+
+  - symbol: "MPC"
+    company_name: "Marathon Petroleum Corp."
+    sector_tags: ["能源", "炼油", "化工", "价值"]
+
+  - symbol: "VLO"
+    company_name: "Valero Energy Corp."
+    sector_tags: ["能源", "炼油", "化工", "价值"]
+
+  - symbol: "PSX"
+    company_name: "Phillips 66"
+    sector_tags: ["能源", "炼油", "中游", "价值"]
+
+  # === 医疗/制药 ===
+  - symbol: "JNJ"
+    company_name: "Johnson & Johnson"
+    sector_tags: ["医疗", "制药", "医疗器械", "价值", "股息"]
+
+  - symbol: "PFE"
+    company_name: "Pfizer Inc."
+    sector_tags: ["制药", "疫苗", "生物科技", "价值"]
+
+  - symbol: "UNH"
+    company_name: "UnitedHealth Group Incorporated"
+    sector_tags: ["医疗", "保险", "健康服务", "价值"]
+
+  - symbol: "ABBV"
+    company_name: "AbbVie Inc."
+    sector_tags: ["制药", "免疫", "肿瘤", "价值", "股息"]
+
+  - symbol: "MRK"
+    company_name: "Merck & Co. Inc."
+    sector_tags: ["制药", "肿瘤", "疫苗", "价值", "股息"]
+
+  - symbol: "LLY"
+    company_name: "Eli Lilly and Company"
+    sector_tags: ["制药", "糖尿病", "肥胖", "成长"]
+
+  - symbol: "TMO"
+    company_name: "Thermo Fisher Scientific Inc."
+    sector_tags: ["医疗", "生命科学", "仪器", "成长"]
+
+  - symbol: "ABT"
+    company_name: "Abbott Laboratories"
+    sector_tags: ["医疗", "诊断", "营养", "价值", "股息"]
+
+  - symbol: "DHR"
+    company_name: "Danaher Corporation"
+    sector_tags: ["医疗", "生命科学", "诊断", "成长"]
+
+  - symbol: "BMY"
+    company_name: "Bristol-Myers Squibb Company"
+    sector_tags: ["制药", "肿瘤", "免疫", "价值"]
+
+  # === 消费/零售 ===
+  - symbol: "KO"
+    company_name: "The Coca-Cola Company"
+    sector_tags: ["消费", "饮料", "股息", "价值"]
+
+  - symbol: "PG"
+    company_name: "Procter & Gamble Co."
+    sector_tags: ["消费", "日化", "股息", "价值"]
+
+  - symbol: "PEP"
+    company_name: "PepsiCo Inc."
+    sector_tags: ["消费", "饮料", "食品", "股息", "价值"]
+
+  - symbol: "COST"
+    company_name: "Costco Wholesale Corporation"
+    sector_tags: ["零售", "会员店", "消费", "成长"]
+
+  - symbol: "WMT"
+    company_name: "Walmart Inc."
+    sector_tags: ["零售", "超市", "消费", "价值"]
+
+  - symbol: "TGT"
+    company_name: "Target Corporation"
+    sector_tags: ["零售", "百货", "消费", "价值"]
+
+  - symbol: "HD"
+    company_name: "The Home Depot Inc."
+    sector_tags: ["零售", "家装", "消费", "价值"]
+
+  - symbol: "LOW"
+    company_name: "Lowe's Companies Inc."
+    sector_tags: ["零售", "家装", "消费", "价值"]
+
+  - symbol: "NKE"
+    company_name: "NIKE Inc."
+    sector_tags: ["消费", "服装", "运动", "成长"]
+
+  - symbol: "SBUX"
+    company_name: "Starbucks Corporation"
+    sector_tags: ["消费", "餐饮", "咖啡", "成长"]
+
+  # === 工业/制造 ===
+  - symbol: "CAT"
+    company_name: "Caterpillar Inc."
+    sector_tags: ["工业", "机械", "基建", "价值"]
+
+  - symbol: "DE"
+    company_name: "Deere & Company"
+    sector_tags: ["工业", "农业机械", "制造", "价值"]
+
+  - symbol: "GE"
+    company_name: "General Electric Company"
+    sector_tags: ["工业", "航空发动机", "电力", "价值"]
+
+  - symbol: "HON"
+    company_name: "Honeywell International Inc."
+    sector_tags: ["工业", "自动化", "航空航天", "价值"]
+
+  - symbol: "UPS"
+    company_name: "United Parcel Service Inc."
+    sector_tags: ["物流", "快递", "运输", "价值"]
+
+  - symbol: "FDX"
+    company_name: "FedEx Corporation"
+    sector_tags: ["物流", "快递", "运输", "价值"]
+
+  - symbol: "BA"
+    company_name: "The Boeing Company"
+    sector_tags: ["航空", "国防", "制造", "价值"]
+
+  - symbol: "RTX"
+    company_name: "RTX Corporation"
+    sector_tags: ["国防", "航空", "工业", "价值"]
+
+  # === 通信/媒体 ===
+  - symbol: "VZ"
+    company_name: "Verizon Communications Inc."
+    sector_tags: ["通信", "电信", "股息", "价值"]
+
+  - symbol: "T"
+    company_name: "AT&T Inc."
+    sector_tags: ["通信", "电信", "媒体", "股息", "价值"]
+
+  - symbol: "TMUS"
+    company_name: "T-Mobile US Inc."
+    sector_tags: ["通信", "电信", "成长"]
+
+  - symbol: "CMCSA"
+    company_name: "Comcast Corporation"
+    sector_tags: ["媒体", "有线", "娱乐", "价值"]
+
+  - symbol: "DIS"
+    company_name: "The Walt Disney Company"
+    sector_tags: ["媒体", "娱乐", "主题公园", "价值"]
+
+  # === 房地产/REITs ===
+  - symbol: "PLD"
+    company_name: "Prologis Inc."
+    sector_tags: ["REIT", "物流地产", "股息", "价值"]
+
+  - symbol: "AMT"
+    company_name: "American Tower Corporation"
+    sector_tags: ["REIT", "通信塔", "股息", "价值"]
+
+  - symbol: "O"
+    company_name: "Realty Income Corporation"
+    sector_tags: ["REIT", "零售地产", "股息", "价值"]
+
+  - symbol: "SPG"
+    company_name: "Simon Property Group Inc."
+    sector_tags: ["REIT", "商业地产", "股息", "价值"]
+
+# A股候选池
+cn:
+  # === 白酒/消费 ===
+  - symbol: "600519"
+    company_name: "贵州茅台"
+    sector_tags: ["白酒", "消费", "股息", "高端", "价值"]
+
+  - symbol: "000858"
+    company_name: "五粮液"
+    sector_tags: ["白酒", "消费", "品牌", "价值"]
+
+  - symbol: "000568"
+    company_name: "泸州老窖"
+    sector_tags: ["白酒", "消费", "品牌", "价值"]
+
+  - symbol: "002304"
+    company_name: "洋河股份"
+    sector_tags: ["白酒", "消费", "品牌", "价值"]
+
+  - symbol: "000799"
+    company_name: "酒鬼酒"
+    sector_tags: ["白酒", "消费", "成长"]
+
+  - symbol: "600809"
+    company_name: "山西汾酒"
+    sector_tags: ["白酒", "消费", "成长"]
+
+  - symbol: "600887"
+    company_name: "伊利股份"
+    sector_tags: ["乳业", "食品", "消费", "股息", "价值"]
+
+  - symbol: "000333"
+    company_name: "美的集团"
+    sector_tags: ["家电", "制造", "消费", "股息", "价值"]
+
+  - symbol: "000651"
+    company_name: "格力电器"
+    sector_tags: ["家电", "制造", "消费", "股息", "价值"]
+
+  - symbol: "600690"
+    company_name: "海尔智家"
+    sector_tags: ["家电", "制造", "消费", "成长"]
+
+  # === 金融/银行/保险 ===
+  - symbol: "601318"
+    company_name: "中国平安"
+    sector_tags: ["保险", "金融", "科技", "价值"]
+
+  - symbol: "600036"
+    company_name: "招商银行"
+    sector_tags: ["银行", "零售", "金融", "价值"]
+
+  - symbol: "601398"
+    company_name: "工商银行"
+    sector_tags: ["银行", "国有大行", "股息", "价值"]
+
+  - symbol: "601288"
+    company_name: "农业银行"
+    sector_tags: ["银行", "国有大行", "股息", "价值"]
+
+  - symbol: "601939"
+    company_name: "建设银行"
+    sector_tags: ["银行", "国有大行", "股息", "价值"]
+
+  - symbol: "601988"
+    company_name: "中国银行"
+    sector_tags: ["银行", "国有大行", "股息", "价值"]
+
+  - symbol: "600030"
+    company_name: "中信证券"
+    sector_tags: ["券商", "金融", "投行", "价值"]
+
+  - symbol: "601211"
+    company_name: "国泰君安"
+    sector_tags: ["券商", "金融", "投行", "价值"]
+
+  - symbol: "600837"
+    company_name: "海通证券"
+    sector_tags: ["券商", "金融", "投行", "价值"]
+
+  - symbol: "601688"
+    company_name: "华泰证券"
+    sector_tags: ["券商", "金融", "科技", "价值"]
+
+  # === 能源/电力/煤炭 ===
+  - symbol: "600900"
+    company_name: "长江电力"
+    sector_tags: ["电力", "水电", "股息", "公用事业", "价值"]
+
+  - symbol: "600028"
+    company_name: "中国石化"
+    sector_tags: ["能源", "石油化工", "股息", "价值"]
+
+  - symbol: "601088"
+    company_name: "中国神华"
+    sector_tags: ["煤炭", "能源", "股息", "价值"]
+
+  - symbol: "601225"
+    company_name: "陕西煤业"
+    sector_tags: ["煤炭", "能源", "股息", "价值"]
+
+  - symbol: "600019"
+    company_name: "宝钢股份"
+    sector_tags: ["钢铁", "制造", "周期", "价值"]
+
+  - symbol: "601899"
+    company_name: "紫金矿业"
+    sector_tags: ["矿业", "黄金", "铜", "成长"]
+
+  - symbol: "600309"
+    company_name: "万华化学"
+    sector_tags: ["化工", "新材料", "制造", "成长"]
+
+  - symbol: "600585"
+    company_name: "海螺水泥"
+    sector_tags: ["建材", "基建", "周期", "价值"]
+
+  # === 新能源/电动车/光伏 ===
+  - symbol: "300750"
+    company_name: "宁德时代"
+    sector_tags: ["新能源", "锂电池", "电动车", "成长"]
+
+  - symbol: "002594"
+    company_name: "比亚迪"
+    sector_tags: ["新能源汽车", "电池", "制造", "成长"]
+
+  - symbol: "601012"
+    company_name: "隆基绿能"
+    sector_tags: ["光伏", "新能源", "制造", "成长"]
+
+  - symbol: "002459"
+    company_name: "晶澳科技"
+    sector_tags: ["光伏", "新能源", "制造", "成长"]
+
+  - symbol: "600438"
+    company_name: "通威股份"
+    sector_tags: ["光伏", "新能源", "养殖", "成长"]
+
+  - symbol: "002129"
+    company_name: "TCL中环"
+    sector_tags: ["光伏", "半导体", "制造", "成长"]
+
+  - symbol: "688599"
+    company_name: "天合光能"
+    sector_tags: ["光伏", "新能源", "制造", "成长"]
+
+  - symbol: "605117"
+    company_name: "德业股份"
+    sector_tags: ["光伏", "逆变器", "制造", "成长"]
+
+  # === 半导体/芯片/国产替代 ===
+  - symbol: "688981"
+    company_name: "中芯国际"
+    sector_tags: ["半导体", "芯片", "国产替代", "成长"]
+
+  - symbol: "002371"
+    company_name: "北方华创"
+    sector_tags: ["半导体设备", "国产替代", "制造", "成长"]
+
+  - symbol: "688012"
+    company_name: "中微公司"
+    sector_tags: ["半导体设备", "国产替代", "制造", "成长"]
+
+  - symbol: "603501"
+    company_name: "韦尔股份"
+    sector_tags: ["半导体", "芯片设计", "国产替代", "成长"]
+
+  - symbol: "002049"
+    company_name: "紫光国微"
+    sector_tags: ["半导体", "芯片设计", "国产替代", "成长"]
+
+  - symbol: "688256"
+    company_name: "寒武纪"
+    sector_tags: ["AI芯片", "半导体", "国产替代", "成长"]
+
+  - symbol: "688041"
+    company_name: "海光信息"
+    sector_tags: ["CPU", "半导体", "国产替代", "成长"]
+
+  - symbol: "688111"
+    company_name: "金山办公"
+    sector_tags: ["软件", "办公", "国产替代", "成长"]
+
+  # === 医药/创新药 ===
+  - symbol: "600276"
+    company_name: "恒瑞医药"
+    sector_tags: ["制药", "创新药", "医疗", "成长"]
+
+  - symbol: "300760"
+    company_name: "迈瑞医疗"
+    sector_tags: ["医疗器械", "医疗", "制造", "成长"]
+
+  - symbol: "688180"
+    company_name: "君实生物"
+    sector_tags: ["创新药", "生物科技", "医疗", "成长"]
+
+  - symbol: "300122"
+    company_name: "智飞生物"
+    sector_tags: ["疫苗", "生物科技", "医疗", "成长"]
+
+  - symbol: "300347"
+    company_name: "泰格医药"
+    sector_tags: ["CRO", "医疗", "服务", "成长"]
+
+  - symbol: "603259"
+    company_name: "药明康德"
+    sector_tags: ["CRO", "医疗", "服务", "成长"]
+
+  - symbol: "000661"
+    company_name: "长春高新"
+    sector_tags: ["制药", "生物科技", "医疗", "成长"]
+
+  - symbol: "002007"
+    company_name: "华兰生物"
+    sector_tags: ["生物科技", "血液制品", "医疗", "成长"]
+
+  # === 科技/电子/通信 ===
+  - symbol: "002475"
+    company_name: "立讯精密"
+    sector_tags: ["电子", "消费电子", "制造", "苹果链", "成长"]
+
+  - symbol: "600584"
+    company_name: "长电科技"
+    sector_tags: ["半导体", "封测", "制造", "成长"]
+
+  - symbol: "002415"
+    company_name: "海康威视"
+    sector_tags: ["安防", "AI", "电子", "价值"]
+
+  - symbol: "002236"
+    company_name: "大华股份"
+    sector_tags: ["安防", "AI", "电子", "价值"]
+
+  - symbol: "000063"
+    company_name: "中兴通讯"
+    sector_tags: ["通信", "5G", "设备", "价值"]
+
+  - symbol: "600486"
+    company_name: "扬杰科技"
+    sector_tags: ["半导体", "功率器件", "制造", "成长"]
+
+  # === 互联网/软件 ===
+  - symbol: "300059"
+    company_name: "东方财富"
+    sector_tags: ["互联网券商", "金融科技", "成长"]
+
+  - symbol: "002410"
+    company_name: "广联达"
+    sector_tags: ["软件", "建筑信息化", "SaaS", "成长"]
+
+  - symbol: "300033"
+    company_name: "同花顺"
+    sector_tags: ["金融科技", "软件", "AI", "成长"]
+
+  - symbol: "688036"
+    company_name: "传音控股"
+    sector_tags: ["消费电子", "手机", "出海", "成长"]
+
+  # === 物流/运输 ===
+  - symbol: "002352"
+    company_name: "顺丰控股"
+    sector_tags: ["物流", "快递", "供应链", "成长"]
+
+  - symbol: "600029"
+    company_name: "南方航空"
+    sector_tags: ["航空", "运输", "周期", "价值"]
+
+  - symbol: "601111"
+    company_name: "中国国航"
+    sector_tags: ["航空", "运输", "周期", "价值"]
+
+  # === 基建/建筑/地产 ===
+  - symbol: "600031"
+    company_name: "三一重工"
+    sector_tags: ["工程机械", "制造", "基建", "价值"]
+
+  - symbol: "000333"
+    company_name: "万科A"
+    sector_tags: ["地产", "住宅", "价值"]
+
+  - symbol: "600048"
+    company_name: "保利发展"
+    sector_tags: ["地产", "住宅", "央企", "价值"]
+
+  - symbol: "601668"
+    company_name: "中国建筑"
+    sector_tags: ["建筑", "基建", "央企", "价值"]
+
+  - symbol: "601390"
+    company_name: "中国中铁"
+    sector_tags: ["建筑", "基建", "央企", "价值"]
+
+  - symbol: "601186"
+    company_name: "中国铁建"
+    sector_tags: ["建筑", "基建", "央企", "价值"]

@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>圆桌讨论 - Stock RAG</title>
+    <link rel="stylesheet" href="css/app.css?v=5">
+    <link rel="stylesheet" href="css/persona.css?v=5">
+</head>
+<body>
+    <div class="roundtable-page">
+        <div class="risk-banner">
+            <p>⚠️ 风险提示：本工具仅用于研究辅助，不构成投资建议。投资有风险，决策需谨慎。</p>
+        </div>
+
+        <header class="roundtable-header">
+            <div class="roundtable-header-inner">
+                <a href="personas.html" class="back-link">← 返回角色列表</a>
+                <h1>圆桌讨论</h1>
+            </div>
+        </header>
+
+        <main class="roundtable-content">
+            <div class="roundtable-input-section">
+                <div class="input-box">
+                    <textarea id="question-input" rows="3" placeholder="输入您想讨论的问题..."></textarea>
+                    <button type="button" class="btn btn-primary" id="start-button" onclick="startRoundtable()">
+                        🎯 开始讨论
+                    </button>
+                </div>
+            </div>
+
+            <div class="persona-selector">
+                <h3>选择参与讨论的角色（默认 3 位专家）</h3>
+                <div id="persona-options" class="persona-options">
+                    <div class="loading-state" style="padding: 20px;">
+                        <div class="loading-dots">
+                            <span></span>
+                            <span></span>
+                            <span></span>
+                        </div>
+                        <p>加载中...</p>
+                    </div>
+                </div>
+            </div>
+
+            <div id="results-section" style="display: none;">
+                <div id="answers-grid" class="answers-grid"></div>
+                
+                <div class="summary-section">
+                    <h3>讨论总结</h3>
+                    <div class="summary-grid">
+                        <div class="summary-box consensus">
+                            <h4>✅ 共识点</h4>
+                            <ul id="consensus-list"></ul>
+                        </div>
+                        <div class="summary-box disagreements">
+                            <h4>❌ 分歧点</h4>
+                            <ul id="disagreements-list"></ul>
+                        </div>
+                        <div class="summary-box risk-focus">
+                            <h4>⚠️ 风险焦点</h4>
+                            <ul id="risk-focus-list"></ul>
+                        </div>
+                    </div>
+                    
+                    <div id="moderation-notice" class="moderation-notice" style="display: none;">
+                        <p></p>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <script src="js/auth.js"></script>
+        <script src="js/persona-api.js"></script>
+        <script>
+            const defaultPersonas = ['us_growth_tech', 'us_value_recovery', 'cn_dividend_defensive'];
+            const selectedPersonas = new Set();
+
+            async function init() {
+                const ok = await Auth.ensureAuthenticated({ redirect: true });
+                if (!ok) return;
+                
+                await loadPersonas();
+                
+                const params = new URLSearchParams(window.location.search);
+                const preQuestion = params.get('question');
+                if (preQuestion) {
+                    document.getElementById('question-input').value = decodeURIComponent(preQuestion);
+                }
+                
+                const prePersona = params.get('persona');
+                if (prePersona) {
+                    if (!selectedPersonas.has(prePersona)) {
+                        selectedPersonas.add(prePersona);
+                    }
+                    // 添加默认角色确保至少有 3 个
+                    defaultPersonas.forEach(p => {
+                        if (!selectedPersonas.has(p)) {
+                            selectedPersonas.add(p);
+                        }
+                    });
+                } else {
+                    // 默认选择 3 个角色
+                    defaultPersonas.forEach(p => selectedPersonas.add(p));
+                }
+                
+                updateSelectionUI();
+            }
+
+            async function loadPersonas() {
+                try {
+                    const response = await PersonaAPI.listPersonas({ status: 'active', limit: 10 });
+                    const personas = response.items || [];
+                    renderPersonaOptions(personas);
+                } catch (error) {
+                    document.getElementById('persona-options').innerHTML = `
+                        <div class="error-state">
+                            <p>加载失败：${error.message}</p>
+                        </div>
+                    `;
+                }
+            }
+
+            function renderPersonaOptions(personas) {
+                const html = personas.map(persona => {
+                    const isSelected = selectedPersonas.has(persona.persona_id);
+                    return `
+                        <div class="persona-option ${isSelected ? 'selected' : ''}" 
+                             onclick="togglePersona('${persona.persona_id}')">
+                            <div class="option-avatar">${getAvatarEmoji(persona.persona_id)}</div>
+                            <div class="option-info">
+                                <span class="option-name">${persona.name}</span>
+                                <span class="option-market">${persona.market === 'us' ? '美股' : 'A股'}</span>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+                
+                document.getElementById('persona-options').innerHTML = html;
+            }
+
+            function togglePersona(id) {
+                if (selectedPersonas.has(id)) {
+                    if (selectedPersonas.size <= 2) {
+                        alert('至少需要选择 2 位专家');
+                        return;
+                    }
+                    selectedPersonas.delete(id);
+                } else {
+                    if (selectedPersonas.size >= 5) {
+                        alert('最多只能选择 5 位专家');
+                        return;
+                    }
+                    selectedPersonas.add(id);
+                }
+                updateSelectionUI();
+            }
+
+            function updateSelectionUI() {
+                const options = document.querySelectorAll('.persona-option');
+                options.forEach(opt => {
+                    const id = opt.getAttribute('onclick').match(/'([^']+)'/)[1];
+                    if (selectedPersonas.has(id)) {
+                        opt.classList.add('selected');
+                    } else {
+                        opt.classList.remove('selected');
+                    }
+                });
+            }
+
+            async function startRoundtable() {
+                const question = document.getElementById('question-input').value.trim();
+                if (!question) {
+                    alert('请输入讨论问题');
+                    return;
+                }
+                
+                if (selectedPersonas.size < 2) {
+                    alert('请至少选择 2 位专家');
+                    return;
+                }
+                
+                document.getElementById('start-button').disabled = true;
+                document.getElementById('start-button').textContent = '讨论中...';
+                
+                try {
+                    const response = await PersonaAPI.runRoundtable({
+                        question: question,
+                        persona_ids: Array.from(selectedPersonas)
+                    });
+                    
+                    document.getElementById('results-section').style.display = 'block';
+                    renderAnswers(response.answers || []);
+                    renderSummary(response);
+                    scrollToResults();
+                } catch (error) {
+                    alert(`讨论失败：${error.message}`);
+                } finally {
+                    document.getElementById('start-button').disabled = false;
+                    document.getElementById('start-button').textContent = '🎯 开始讨论';
+                }
+            }
+
+            function renderAnswers(answers) {
+                const html = answers.map(answer => {
+                    const stanceClass = getStanceClass(answer.stance);
+                    return `
+                        <div class="answer-card">
+                            <div class="answer-card-header">
+                                <div class="answer-avatar">${getAvatarEmoji(answer.persona_id)}</div>
+                                <div class="answer-header-info">
+                                    <h4>${answer.persona_name}</h4>
+                                    <span class="answer-stance ${stanceClass}">${answer.stance}</span>
+                                </div>
+                            </div>
+                            <div class="answer-thesis">
+                                <h5>核心论点</h5>
+                                <ul>
+                                    ${(answer.thesis || []).map(t => `<li>${escapeHtml(t)}</li>`).join('')}
+                                </ul>
+                            </div>
+                            <div class="answer-risks">
+                                <h5>风险提示</h5>
+                                <ul>
+                                    ${(answer.risks || []).map(r => `<li>⚠️ ${escapeHtml(r)}</li>`).join('')}
+                                </ul>
+                            </div>
+                            <div class="answer-counter-view">
+                                <h5>反方观点 - ${answer.counter_view?.persona_name || '其他视角'}</h5>
+                                <p>${escapeHtml(answer.counter_view?.summary || '暂无反方观点')}</p>
+                            </div>
+                            <div class="answer-citations">
+                                <h5>参考来源</h5>
+                                <div class="citation-list">
+                                    ${(answer.citations || []).length > 0 
+                                        ? (answer.citations || []).map((c, i) => `
+                                            <div class="citation-card">
+                                                <div class="title">${escapeHtml(c.title)}</div>
+                                                <div class="meta">
+                                                    <span>${c.source}</span>
+                                                    <span>${c.published_at}</span>
+                                                </div>
+                                                <div class="snippet">${escapeHtml(c.snippet)}</div>
+                                            </div>
+                                        `).join('')
+                                        : '<p style="font-size: 0.8rem; color: var(--muted);">暂无参考来源</p>'
+                                    }
+                                </div>
+                            </div>
+                            <div class="answer-disclaimer">
+                                <p>${escapeHtml(answer.disclaimer || '')}</p>
+                            </div>
+                            <div class="answer-cta">
+                                <button type="button" class="btn btn-secondary" 
+                                        onclick="goToChat('${answer.persona_id}', '')">
+                                    💬 和 TA 深入讨论
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+                
+                document.getElementById('answers-grid').innerHTML = html;
+            }
+
+            function renderSummary(response) {
+                document.getElementById('consensus-list').innerHTML = 
+                    (response.consensus || []).map(c => `<li>${escapeHtml(c)}</li>`).join('');
+                
+                document.getElementById('disagreements-list').innerHTML = 
+                    (response.disagreements || []).map(d => `<li>${escapeHtml(d)}</li>`).join('');
+                
+                document.getElementById('risk-focus-list').innerHTML = 
+                    (response.risk_focus || []).map(r => `<li>${escapeHtml(r)}</li>`).join('');
+                
+                if (response.moderation_notice) {
+                    document.getElementById('moderation-notice').style.display = 'block';
+                    document.getElementById('moderation-notice').querySelector('p').textContent = response.moderation_notice;
+                } else {
+                    document.getElementById('moderation-notice').style.display = 'none';
+                }
+            }
+
+            function getAvatarEmoji(personaId) {
+                const emojis = {
+                    'us_growth_tech': '🚀',
+                    'us_value_recovery': '📊',
+                    'us_momentum': '⚡',
+                    'cn_dividend_defensive': '🛡️',
+                    'cn_growth': '🌱',
+                    'cn_momentum': '🔥'
+                };
+                return emojis[personaId] || '👤';
+            }
+
+            function getStanceClass(stance) {
+                if (!stance) return 'neutral';
+                const s = stance.toLowerCase();
+                if (s.includes('bullish') || s.includes('optimistic')) return 'bullish';
+                if (s.includes('bearish') || s.includes('cautious')) return 'bearish';
+                return 'neutral';
+            }
+
+            function escapeHtml(text) {
+                const div = document.createElement('div');
+                div.textContent = text;
+                return div.innerHTML;
+            }
+
+            function goToChat(personaId, question) {
+                const url = question 
+                    ? `persona-chat.html?id=${personaId}&question=${encodeURIComponent(question)}`
+                    : `persona-chat.html?id=${personaId}`;
+                window.location.href = url;
+            }
+
+            function scrollToResults() {
+                document.getElementById('results-section').scrollIntoView({ behavior: 'smooth' });
+            }
+
+            document.addEventListener('DOMContentLoaded', init);
+        </script>
+    </div>
+</body>
+</html>

@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>投资角色对话 - Stock RAG</title>
+    <link rel="stylesheet" href="css/app.css?v=5">
+    <link rel="stylesheet" href="css/persona.css?v=8">
+</head>
+<body>
+    <div class="persona-chat-page">
+        <aside class="chat-sidebar">
+            <div class="chat-sidebar-header">
+                <a href="personas.html" class="back-link">← 返回角色列表</a>
+                <div id="sidebar-persona" class="sidebar-persona">
+                    <div class="sidebar-avatar">👤</div>
+                    <div class="sidebar-persona-info">
+                        <h4>加载中...</h4>
+                        <span class="risk">风险等级</span>
+                    </div>
+                </div>
+            </div>
+            <div id="sidebar-body" class="chat-sidebar-body">
+                <div class="loading-state" style="padding: 0;">
+                    <p>加载中...</p>
+                </div>
+            </div>
+        </aside>
+
+        <main class="chat-main">
+            <header class="chat-main-header">
+                <h2>对话</h2>
+                <div class="topbar-user">
+                    <span class="user-badge" id="username-display"></span>
+                    <button type="button" class="btn btn-ghost" onclick="Auth.logout()">退出</button>
+                </div>
+            </header>
+
+            <div id="chat-content" class="chat-content">
+                <div class="empty-state" id="chat-empty-state">
+                    <h3>开始对话</h3>
+                    <p>输入问题与投资角色进行交流</p>
+                </div>
+            </div>
+
+            <div class="quick-questions">
+                <h5>快捷问题</h5>
+                <button type="button" class="btn btn-secondary" onclick="sendQuickQuestion('近期市场走势如何？')">近期市场走势如何？</button>
+                <button type="button" class="btn btn-secondary" onclick="sendQuickQuestion('科技股投资机会？')">科技股投资机会？</button>
+                <button type="button" class="btn btn-secondary" onclick="sendQuickQuestion('如何评估风险？')">如何评估风险？</button>
+            </div>
+
+            <footer class="chat-composer">
+                <div class="chat-composer-inner">
+                    <textarea id="message-input" rows="1" placeholder="输入问题…" onkeydown="handleKeydown(event)"></textarea>
+                    <button type="button" class="btn btn-primary" id="send-button" onclick="sendMessage()">发送</button>
+                </div>
+            </footer>
+        </main>
+    </div>
+
+    <script src="js/auth.js"></script>
+    <script src="js/persona-api.js"></script>
+    <script>
+        let currentPersona = null;
+        const messages = [];
+
+        async function init() {
+            const user = await Auth.ensureAuthenticated({ redirect: true });
+            if (!user) return;
+
+            document.getElementById('username-display').textContent = user.username || '用户';
+
+            const params = new URLSearchParams(window.location.search);
+            const personaId = params.get('id');
+
+            if (!personaId) {
+                alert('缺少角色 ID');
+                return;
+            }
+
+            await loadPersona(personaId);
+
+            const preQuestion = params.get('question');
+            if (preQuestion) {
+                document.getElementById('message-input').value = decodeURIComponent(preQuestion);
+                setTimeout(() => sendMessage(), 300);
+            }
+        }
+
+        async function loadPersona(id) {
+            try {
+                currentPersona = await PersonaAPI.getPersona(id);
+                renderSidebar();
+            } catch (error) {
+                alert(`加载角色失败：${error.message}`);
+            }
+        }
+
+        function renderSidebar() {
+            document.getElementById('sidebar-persona').innerHTML = `
+                <div class="sidebar-avatar">${getAvatarEmoji(currentPersona.persona_id)}</div>
+                <div class="sidebar-persona-info">
+                    <h4>${escapeHtml(currentPersona.name)}</h4>
+                    <span class="risk">风险等级: ${getRiskLabel(currentPersona.risk_level)}</span>
+                </div>
+            `;
+
+            document.getElementById('sidebar-body').innerHTML = `
+                <div class="sidebar-section">
+                    <h5>投资理念</h5>
+                    <p>${escapeHtml(currentPersona.one_liner)}</p>
+                </div>
+                <div class="sidebar-section">
+                    <h5>偏好行业</h5>
+                    <ul>
+                        ${(currentPersona.preferred_sectors || []).map(s => `<li>${escapeHtml(s)}</li>`).join('')}
+                    </ul>
+                </div>
+                <div class="sidebar-section">
+                    <h5>风格标签</h5>
+                    <ul>
+                        ${(currentPersona.style_tags || []).map(t => `<li>${escapeHtml(getStyleName(t))}</li>`).join('')}
+                    </ul>
+                </div>
+            `;
+        }
+
+        async function sendMessage() {
+            const message = document.getElementById('message-input').value.trim();
+            if (!message || !currentPersona) return;
+
+            document.getElementById('message-input').value = '';
+            document.getElementById('send-button').disabled = true;
+
+            addMessage('user', message);
+            scrollToBottom();
+            addLoadingMessage();
+
+            try {
+                const response = await PersonaAPI.chatWithPersona({
+                    persona_id: currentPersona.persona_id,
+                    message: message
+                });
+                removeLoadingMessage();
+                addMessage('assistant', response);
+            } catch (error) {
+                removeLoadingMessage();
+                addMessage('error', error.message);
+            }
+
+            document.getElementById('send-button').disabled = false;
+            scrollToBottom();
+        }
+
+        function addLoadingMessage() {
+            appendToChat(`
+                <div class="persona-msg assistant" id="persona-loading-msg">
+                    <div class="persona-msg-card persona-msg-card--compact">
+                        <div class="persona-reply-summary muted">正在分析…</div>
+                    </div>
+                </div>
+            `);
+            scrollToBottom();
+        }
+
+        function removeLoadingMessage() {
+            document.getElementById('persona-loading-msg')?.remove();
+        }
+
+        function sendQuickQuestion(question) {
+            document.getElementById('message-input').value = question;
+            sendMessage();
+        }
+
+        function handleKeydown(event) {
+            if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                sendMessage();
+            }
+        }
+
+        function hideEmptyState() {
+            document.getElementById('chat-empty-state')?.remove();
+        }
+
+        function appendToChat(html) {
+            hideEmptyState();
+            const container = document.getElementById('chat-content');
+            const wrapper = document.createElement('div');
+            wrapper.innerHTML = html.trim();
+            const node = wrapper.firstElementChild;
+            if (node) container.appendChild(node);
+        }
+
+        function addMessage(type, content) {
+            const id = Date.now();
+
+            if (type === 'user') {
+                messages.push({ id, type, content });
+                appendToChat(`
+                    <div class="persona-msg user">
+                        <div class="persona-msg-card persona-msg-card--user">
+                            <div class="persona-reply-summary">${escapeHtml(content)}</div>
+                        </div>
+                    </div>
+                `);
+                return;
+            }
+
+            if (type === 'assistant') {
+                messages.push({ id, type, content });
+                appendToChat(renderAssistantMessage(content));
+                return;
+            }
+
+            if (type === 'error') {
+                appendToChat(`
+                    <div class="persona-msg assistant">
+                        <div class="persona-msg-card persona-msg-card--error">
+                            <p>错误：${escapeHtml(content)}</p>
+                        </div>
+                    </div>
+                `);
+            }
+        }
+
+        const EN_TO_ZH = [
+            [/From a growth investing perspective, I believe we should focus on long-term growth potential and technological innovation capabilities\.?/gi,
+                '成长视角：建议关注产业长期趋势、龙头盈利兑现与技术创新能力。'],
+            [/Based on my investment philosophy, I hold a (relatively conservative|cautiously optimistic|aggressive) stance on this issue\.?/gi,
+                '基于当前投资框架，对该问题持谨慎评估态度。'],
+            [/The above content is for research and communication purposes only and does not constitute any investment advice\. Investment involves risks, please invest carefully\.?/gi,
+                '以上内容仅供研究交流，不构成投资建议。投资有风险，决策需谨慎。'],
+            [/Macroeconomic uncertainty/gi, '宏观经济不确定性'],
+            [/Market sentiment volatility/gi, '市场情绪波动'],
+            [/Policy risk/gi, '政策风险'],
+        ];
+
+        function toChineseDisplay(text) {
+            if (!text) return '';
+            let out = String(text);
+            for (const [pattern, replacement] of EN_TO_ZH) {
+                out = out.replace(pattern, replacement);
+            }
+            return out;
+        }
+
+        function renderAssistantMessage(answer) {
+            const stanceClass = getStanceClass(answer.stance);
+            const stanceLabel = getStanceLabel(answer.stance);
+            const summary = toChineseDisplay((answer.summary || '').trim() || (answer.stance || '').trim());
+            const citations = answer.citations || [];
+            const thesis = answer.thesis || [];
+            const hasMore = thesis.length > 0;
+
+            const moreHtml = hasMore ? `
+                <details class="persona-reply-more">
+                    <summary>展开核心论点</summary>
+                    <div class="persona-msg-section">
+                        <ul class="thesis-list">
+                            ${thesis.map(t => `<li>${escapeHtml(toChineseDisplay(t))}</li>`).join('')}
+                        </ul>
+                    </div>
+                </details>
+            ` : '';
+
+            const citationsHtml = citations.length ? `
+                <div class="persona-citations">
+                    <h5>参考来源</h5>
+                    <div class="citation-list">
+                        ${citations.map(c => `
+                            <div class="citation-card">
+                                <div class="title">${escapeHtml(c.title)}</div>
+                                <div class="meta">
+                                    <span>${escapeHtml(c.source || '')}</span>
+                                    <span>${escapeHtml(c.published_at || '')}</span>
+                                </div>
+                                <div class="snippet">${escapeHtml(c.snippet || '')}</div>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            ` : '';
+
+            return `
+                <div class="persona-msg assistant">
+                    <div class="persona-msg-card">
+                        <div class="persona-msg-header">
+                            <div class="persona-msg-avatar">${getAvatarEmoji(currentPersona.persona_id)}</div>
+                            <div class="persona-msg-header-info">
+                                <h4>${escapeHtml(answer.persona_name || currentPersona.name)}</h4>
+                                <span class="role">投资角色</span>
+                            </div>
+                            <span class="stance-label ${stanceClass}">${escapeHtml(stanceLabel)}</span>
+                        </div>
+                        <div class="persona-reply-summary">${escapeHtml(summary)}</div>
+                        ${moreHtml}
+                        ${citationsHtml}
+                        <p class="persona-reply-footnote">${escapeHtml(toChineseDisplay(answer.disclaimer || ''))}</p>
+                    </div>
+                </div>
+            `;
+        }
+
+        function getAvatarEmoji(personaId) {
+            const emojis = {
+                'us_growth_tech': '🚀',
+                'us_value_recovery': '📊',
+                'us_momentum': '⚡',
+                'cn_dividend_defensive': '🛡️',
+                'cn_growth': '🌱',
+                'cn_momentum': '🔥'
+            };
+            return emojis[personaId] || '👤';
+        }
+
+        function getRiskLabel(level) {
+            const labels = { 'low': '低', 'medium': '中', 'high': '高' };
+            return labels[level] || '中';
+        }
+
+        function getStyleName(tag) {
+            const names = {
+                'growth': '成长', 'value': '价值', 'dividend': '高股息',
+                'momentum': '动量', 'tech': '科技', 'ai': 'AI', 'defensive': '防御'
+            };
+            return names[tag] || tag;
+        }
+
+        function getStanceClass(stance) {
+            if (!stance) return 'neutral';
+            const s = stance.toLowerCase();
+            if (s.includes('bullish') || s.includes('optimistic') || s.includes('positive') || s.includes('成长') || s.includes('积极')) return 'bullish';
+            if (s.includes('bearish') || s.includes('negative') || s.includes('谨慎') || s.includes('保守')) return 'bearish';
+            return 'neutral';
+        }
+
+        function getStanceLabel(stance) {
+            const cls = getStanceClass(stance);
+            if (cls === 'bullish') return '偏多';
+            if (cls === 'bearish') return '谨慎';
+            return '中性';
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text == null ? '' : String(text);
+            return div.innerHTML;
+        }
+
+        function scrollToBottom() {
+            const chatContent = document.getElementById('chat-content');
+            chatContent.scrollTop = chatContent.scrollHeight;
+        }
+
+        document.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+</html>

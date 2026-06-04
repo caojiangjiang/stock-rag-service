@@ -262,6 +262,105 @@ var (
 		[]string{"endpoint"},
 	)
 
+	// Persona Chat 指标
+	PersonaChatRequestsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "persona_chat_requests_total",
+			Help: "Total number of Persona chat requests",
+		},
+		[]string{"status", "persona_id"},
+	)
+
+	PersonaChatDuration = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "persona_chat_duration_seconds",
+			Help:    "Persona chat request latency in seconds",
+			Buckets: []float64{0.5, 1, 2, 5, 10, 30, 60},
+		},
+		[]string{"persona_id"},
+	)
+
+	PersonaChatCitations = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "persona_chat_citations_count",
+			Help:    "Number of citations in Persona chat responses",
+			Buckets: []float64{0, 1, 3, 5, 10},
+		},
+		[]string{"persona_id"},
+	)
+
+	PersonaChatErrorsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "persona_chat_errors_total",
+			Help: "Total number of Persona chat errors",
+		},
+		[]string{"persona_id", "error_code"},
+	)
+
+	PersonaChatRefusalsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "persona_chat_refusals_total",
+			Help: "Total number of Persona chat refusals",
+		},
+		[]string{"persona_id", "reason"},
+	)
+
+	// Persona Roundtable 指标
+	PersonaRoundtableRequestsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "persona_roundtable_requests_total",
+			Help: "Total number of Persona roundtable requests",
+		},
+		[]string{"status"},
+	)
+
+	PersonaRoundtableDuration = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "persona_roundtable_duration_seconds",
+			Help:    "Persona roundtable request latency in seconds",
+			Buckets: []float64{1, 2, 5, 10, 30, 60, 120},
+		},
+	)
+
+	PersonaRoundtableParticipants = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "persona_roundtable_participants_count",
+			Help:    "Number of participants in Persona roundtable",
+			Buckets: []float64{2, 3, 4, 5},
+		},
+	)
+
+	PersonaRoundtablePartialFailures = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "persona_roundtable_partial_failures_total",
+			Help: "Total number of partial failures in Persona roundtable",
+		},
+	)
+
+	PersonaRoundtableConsensusCount = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "persona_roundtable_consensus_count",
+			Help:    "Number of consensus points in roundtable results",
+			Buckets: []float64{0, 1, 2, 3, 5},
+		},
+	)
+
+	PersonaRoundtableDisagreementsCount = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "persona_roundtable_disagreements_count",
+			Help:    "Number of disagreement points in roundtable results",
+			Buckets: []float64{0, 1, 2, 3, 5},
+		},
+	)
+
+	PersonaRoundtableRiskFocusCount = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "persona_roundtable_risk_focus_count",
+			Help:    "Number of risk focus points in roundtable results",
+			Buckets: []float64{0, 1, 2, 3, 5},
+		},
+	)
+
 	// 数据库连接池指标
 	DBPoolConnections = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
@@ -383,4 +482,53 @@ func RecordLLMRequest(status string, seconds float64, promptTokens, completionTo
 	if completionTokens > 0 {
 		LLMTokensTotal.WithLabelValues("completion").Add(float64(completionTokens))
 	}
+}
+
+// Persona Chat 指标记录函数
+
+// RecordPersonaChatRequest 记录 Persona Chat 请求
+func RecordPersonaChatRequest(status, personaID string, seconds float64, citationCount int) {
+	if personaID == "" {
+		personaID = "unknown"
+	}
+	PersonaChatRequestsTotal.WithLabelValues(status, personaID).Inc()
+	PersonaChatDuration.WithLabelValues(personaID).Observe(seconds)
+	PersonaChatCitations.WithLabelValues(personaID).Observe(float64(citationCount))
+}
+
+// RecordPersonaChatError 记录 Persona Chat 错误
+func RecordPersonaChatError(personaID, errorCode string) {
+	if personaID == "" {
+		personaID = "unknown"
+	}
+	if errorCode == "" {
+		errorCode = "unknown"
+	}
+	PersonaChatErrorsTotal.WithLabelValues(personaID, errorCode).Inc()
+}
+
+// RecordPersonaChatRefusal 记录 Persona Chat 拒绝
+func RecordPersonaChatRefusal(personaID, reason string) {
+	if personaID == "" {
+		personaID = "unknown"
+	}
+	if reason == "" {
+		reason = "unknown"
+	}
+	PersonaChatRefusalsTotal.WithLabelValues(personaID, reason).Inc()
+}
+
+// Persona Roundtable 指标记录函数
+
+// RecordPersonaRoundtableRequest 记录 Persona Roundtable 请求
+func RecordPersonaRoundtableRequest(status string, seconds float64, participantCount, successCount, failedCount int, consensusCount, disagreementsCount, riskFocusCount int) {
+	PersonaRoundtableRequestsTotal.WithLabelValues(status).Inc()
+	PersonaRoundtableDuration.Observe(seconds)
+	PersonaRoundtableParticipants.Observe(float64(participantCount))
+	if failedCount > 0 {
+		PersonaRoundtablePartialFailures.Add(float64(failedCount))
+	}
+	PersonaRoundtableConsensusCount.Observe(float64(consensusCount))
+	PersonaRoundtableDisagreementsCount.Observe(float64(disagreementsCount))
+	PersonaRoundtableRiskFocusCount.Observe(float64(riskFocusCount))
 }

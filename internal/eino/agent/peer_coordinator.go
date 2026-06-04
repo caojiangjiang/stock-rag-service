@@ -5,6 +5,11 @@ import (
 	"fmt"
 	"sync"
 	"time"
+
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
+
+	"stock_rag/internal/observability"
 )
 
 // PeerCoordinator 并行协作协调器
@@ -152,4 +157,126 @@ func joinStrings(strs []string, sep string) string {
 		result += sep + strs[i]
 	}
 	return result
+}
+
+// ============ 通用 Fanout 并发执行框架 ============
+
+// FanoutResult 单个任务的执行结果
+type FanoutResult[T any] struct {
+	Index    int
+	Result   T
+	Error    error
+	TaskName string
+}
+
+// FanoutOptions Fanout 执行选项
+type FanoutOptions struct {
+	Timeout        time.Duration
+	MaxConcurrency int
+	EnableTracing  bool
+	TraceName      string
+}
+
+// FanoutOption 选项函数
+type FanoutOption func(*FanoutOptions)
+
+// WithTimeout 设置超时时间
+func WithTimeout(timeout time.Duration) FanoutOption {
+	return func(o *FanoutOptions) {
+		o.Timeout = timeout
+	}
+}
+
+// WithMaxConcurrency 设置最大并发数
+func WithMaxConcurrency(max int) FanoutOption {
+	return func(o *FanoutOptions) {
+		o.MaxConcurrency = max
+	}
+}
+
+// WithTracing 启用追踪
+func WithTracing(name string) FanoutOption {
+	return func(o *FanoutOptions) {
+		o.EnableTracing = true
+		o.TraceName = name
+	}
+}
+
+// Fanout 通用并发执行函数
+// items: 待处理的项目列表
+// task: 每个项目的处理函数
+// options: 执行选项
+func Fanout[T any, I any](ctx context.Context, items []I, task func(context.Context, int, I) (T, error), options ...FanoutOption) []FanoutResult[T] {
+	// 设置默认选项
+	opts := &FanoutOptions{
+		Timeout:        60 * time.Second,
+		MaxConcurrency: len(items),
+		EnableTracing:  true,
+		TraceName:      "peer.fanout",
+	}
+
+	for _, opt := range options {
+		opt(opts)
+	}
+
+	// 限制并发数
+	if opts.MaxConcurrency <= 0 || opts.MaxConcurrency > len(items) {
+		opts.MaxConcurrency = len(items)
+	}
+
+	// 创建带超时的上下文
+	ctx, cancel := context.WithTimeout(ctx, opts.Timeout)
+	defer cancel()
+
+	// 创建结果通道
+	resultCh := make(chan FanoutResult[T], len(items))
+
+	// 限制并发的 semaphore
+	sem := make(chan struct{}, opts.MaxConcurrency)
+
+	// 并发执行
+	for i, item := range items {
+		go func(idx int, it I) {
+			// 获取 semaphore
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			var span trace.Span
+			var spanCtx = ctx
+			if opts.EnableTracing {
+				spanCtx, span = observability.StartSpan(ctx, fmt.Sprintf("%s.item", opts.TraceName))
+				defer span.End()
+			}
+
+			result, err := task(spanCtx, idx, it)
+
+			if span != nil {
+				if err != nil {
+					span.SetAttributes(attribute.String("error", err.Error()))
+				}
+				span.SetAttributes(attribute.String("task_name", fmt.Sprintf("item_%d", idx)))
+			}
+
+			resultCh <- FanoutResult[T]{
+				Index:    idx,
+				Result:   result,
+				Error:    err,
+				TaskName: fmt.Sprintf("item_%d", idx),
+			}
+		}(i, item)
+	}
+
+	// 收集结果
+	results := make([]FanoutResult[T], len(items))
+	for i := 0; i < len(items); i++ {
+		select {
+		case result := <-resultCh:
+			results[result.Index] = result
+		case <-ctx.Done():
+			// 超时情况下，返回已完成的结果
+			return results[:i]
+		}
+	}
+
+	return results
 }

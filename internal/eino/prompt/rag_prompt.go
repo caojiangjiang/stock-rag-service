@@ -33,7 +33,7 @@ func PromptRules() []string {
 func NewRAGTemplate() *einoprompt.DefaultChatTemplate {
 	return einoprompt.FromMessages(
 		schema.FString,
-		schema.SystemMessage(RAGPromptTemplate+"\n规则：\n{rules}"),
+		schema.SystemMessage("{system_prompt}\n规则：\n{rules}"),
 		schema.UserMessage("问题：{question}\n股票：{stock_code}\n时间范围：{time_range}\n文档类型：{doc_types}\n解析约束：{query_constraints}\n检索上下文：\n{context}"),
 	)
 }
@@ -77,9 +77,20 @@ func BuildPromptVars(req appmodel.RAGQueryRequest, chunks []appretriever.Retriev
 		queryConstraints = strings.Join(constraintParts, ", ")
 	}
 
+	systemPrompt := RAGPromptTemplate
+	if custom := strings.TrimSpace(req.SystemPrompt); custom != "" {
+		systemPrompt = custom
+	}
+
+	displayQuestion := strings.TrimSpace(req.Question)
+	if uq := strings.TrimSpace(req.UserQuestion); uq != "" {
+		displayQuestion = uq
+	}
+
 	return map[string]any{
+		"system_prompt":     systemPrompt,
 		"rules":             "- " + strings.Join(PromptRules(), "\n- "),
-		"question":          strings.TrimSpace(req.Question),
+		"question":          displayQuestion,
 		"stock_code":        stockCode,
 		"time_range":        timeRange,
 		"doc_types":         strings.Join(docTypes, ", "),

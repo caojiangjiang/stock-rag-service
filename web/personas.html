@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>投资角色 - Stock RAG</title>
+    <link rel="stylesheet" href="css/app.css?v=5">
+    <link rel="stylesheet" href="css/persona.css?v=5">
+</head>
+<body>
+    <div class="personas-page">
+        <div class="risk-banner">
+            <p>⚠️ 风险提示：本工具仅用于研究辅助，不构成投资建议。投资有风险，决策需谨慎。</p>
+        </div>
+        
+        <header class="personas-header">
+            <a href="index.html" class="back-link">← 返回首页</a>
+            <h1>投资角色</h1>
+            <p>与不同投资风格的专家进行深度对话，获取多角度投资分析</p>
+        </header>
+
+        <main class="personas-content">
+            <div class="hot-questions">
+                <h3>热门问题</h3>
+                <button type="button" class="btn btn-secondary" onclick="navigateToRoundtable('AI龙头股未来走势如何？')">
+                    AI龙头股未来走势如何？
+                </button>
+                <button type="button" class="btn btn-secondary" onclick="navigateToRoundtable('当前市场如何配置资产？')">
+                    当前市场如何配置资产？
+                </button>
+                <button type="button" class="btn btn-secondary" onclick="navigateToRoundtable('高股息策略是否适合现在？')">
+                    高股息策略是否适合现在？
+                </button>
+            </div>
+
+            <div id="personas-grid" class="personas-grid">
+                <div class="loading-state">
+                    <div class="loading-dots">
+                        <span></span>
+                        <span></span>
+                        <span></span>
+                    </div>
+                    <p>加载中...</p>
+                </div>
+            </div>
+
+            <div class="personas-footer">
+                <button type="button" class="btn btn-primary" onclick="navigateToRoundtable('')">
+                    圆桌讨论 - 邀请多位专家一起分析
+                </button>
+            </div>
+        </main>
+
+        <script src="js/auth.js"></script>
+        <script src="js/persona-api.js"></script>
+        <script>
+            async function init() {
+                const ok = await Auth.ensureAuthenticated({ redirect: true });
+                if (!ok) return;
+                
+                await loadPersonas();
+            }
+
+            async function loadPersonas() {
+                try {
+                    const response = await PersonaAPI.listPersonas({ status: 'active', limit: 10 });
+                    const personas = response.items || [];
+                    renderPersonas(personas);
+                } catch (error) {
+                    document.getElementById('personas-grid').innerHTML = `
+                        <div class="error-state">
+                            <p>加载失败：${error.message}</p>
+                        </div>
+                    `;
+                }
+            }
+
+            function renderPersonas(personas) {
+                if (personas.length === 0) {
+                    document.getElementById('personas-grid').innerHTML = `
+                        <div class="empty-state">
+                            <p>暂无可用的投资角色</p>
+                        </div>
+                    `;
+                    return;
+                }
+
+                const html = personas.map(persona => {
+                    const tags = persona.style_tags || [];
+                    const marketTag = persona.market === 'us' ? 'market-us' : 'market-cn';
+                    const styleClass = getStyleClass(tags[0]);
+                    
+                    return `
+                        <div class="persona-card" onclick="navigateToDetail('${persona.persona_id}')">
+                            <div class="persona-card-header">
+                                <div class="persona-avatar">${getAvatarEmoji(persona.persona_id)}</div>
+                                <div class="persona-info">
+                                    <h3>${persona.name}</h3>
+                                </div>
+                            </div>
+                            <p class="oneline">${persona.one_liner}</p>
+                            <div class="persona-tags">
+                                <span class="tag ${marketTag}">${persona.market === 'us' ? '美股' : 'A股'}</span>
+                                ${tags.map(tag => `<span class="tag ${styleClass}">${getStyleName(tag)}</span>`).join('')}
+                            </div>
+                            <div class="persona-risk">
+                                <span>风险等级</span>
+                                <div class="risk-indicator ${persona.risk_level || 'medium'}"></div>
+                                <span>${getRiskLabel(persona.risk_level)}</span>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+
+                document.getElementById('personas-grid').innerHTML = html;
+            }
+
+            function getAvatarEmoji(personaId) {
+                const emojis = {
+                    'us_growth_tech': '🚀',
+                    'us_value_recovery': '📊',
+                    'us_momentum': '⚡',
+                    'cn_dividend_defensive': '🛡️',
+                    'cn_growth': '🌱',
+                    'cn_momentum': '🔥'
+                };
+                return emojis[personaId] || '👤';
+            }
+
+            function getStyleClass(tag) {
+                const classes = {
+                    'growth': 'style-growth',
+                    'value': 'style-value',
+                    'dividend': 'style-dividend',
+                    'momentum': 'style-momentum',
+                    'tech': 'style-growth',
+                    'ai': 'style-growth',
+                    'defensive': 'style-dividend'
+                };
+                return classes[tag] || 'style-growth';
+            }
+
+            function getStyleName(tag) {
+                const names = {
+                    'growth': '成长',
+                    'value': '价值',
+                    'dividend': '高股息',
+                    'momentum': '动量',
+                    'tech': '科技',
+                    'ai': 'AI',
+                    'defensive': '防御'
+                };
+                return names[tag] || tag;
+            }
+
+            function getRiskLabel(level) {
+                const labels = {
+                    'low': '低',
+                    'medium': '中',
+                    'high': '高'
+                };
+                return labels[level] || '中';
+            }
+
+            function navigateToDetail(id) {
+                window.location.href = `persona-detail.html?id=${id}`;
+            }
+
+            function navigateToRoundtable(question) {
+                const url = question ? `persona-roundtable.html?question=${encodeURIComponent(question)}` : 'persona-roundtable.html';
+                window.location.href = url;
+            }
+
+            document.addEventListener('DOMContentLoaded', init);
+        </script>
+    </div>
+</body>
+</html>

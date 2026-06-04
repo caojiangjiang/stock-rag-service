@@ -183,6 +183,24 @@ func (p *PostgresConversationStore) DeleteConversation(ctx context.Context, conv
 	return err
 }
 
+func (p *PostgresConversationStore) UpdateConversationTitle(ctx context.Context, conversationID, title string) error {
+	result, err := p.db.Exec(ctx, `
+		UPDATE conversations
+		SET title = $1, updated_at = $2
+		WHERE id = $3
+	`, title, time.Now().Unix(), conversationID)
+	if err != nil {
+		return err
+	}
+
+	rowsAffected := result.RowsAffected()
+	if rowsAffected == 0 {
+		return ErrNotFound
+	}
+
+	return nil
+}
+
 func (p *PostgresConversationStore) SaveMessage(ctx context.Context, message *Message) error {
 	if message.ID == "" {
 		message.ID = fmt.Sprintf("msg-%d", time.Now().UnixNano())

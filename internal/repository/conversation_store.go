@@ -26,6 +26,9 @@ type ConversationStore interface {
 
 	// ListConversations 列出用户的会话列表
 	ListConversations(ctx context.Context, userID string, limit, offset int) ([]*Conversation, error)
+
+	// UpdateConversationTitle 更新会话标题
+	UpdateConversationTitle(ctx context.Context, conversationID, title string) error
 }
 
 // MessageStore 消息存储（对话记录）

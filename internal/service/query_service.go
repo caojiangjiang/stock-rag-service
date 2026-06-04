@@ -287,8 +287,8 @@ func (s *QueryService) Query(ctx context.Context, req appmodel.RAGQueryRequest) 
 		}
 	}
 
-	// 1. 检查语义缓存
-	if s.semanticCache != nil {
+	// 1. 检查语义缓存（Persona 等自定义系统提示不走缓存，避免不同角色命中同一答案）
+	if s.semanticCache != nil && shouldUseSemanticCache(req) {
 		cacheResult, err := s.semanticCache.Get(ctx, req.Question)
 		if err != nil {
 			utils.Warning("语义缓存查询失败", utils.LogFields{
@@ -335,7 +335,7 @@ func (s *QueryService) Query(ctx context.Context, req appmodel.RAGQueryRequest) 
 	}
 
 	// 2. 写入语义缓存
-	if s.semanticCache != nil {
+	if s.semanticCache != nil && shouldUseSemanticCache(req) {
 		if err := s.semanticCache.Set(ctx, req.Question, resp.Answer); err != nil {
 			utils.Warning("语义缓存写入失败", utils.LogFields{
 				StockCode: req.StockCode,
@@ -372,7 +372,7 @@ func (s *QueryService) QueryStream(ctx context.Context, req appmodel.RAGQueryReq
 	}
 
 	// 1. 检查语义缓存（流式查询也支持缓存命中）
-	if s.semanticCache != nil {
+	if s.semanticCache != nil && shouldUseSemanticCache(req) {
 		cacheResult, err := s.semanticCache.Get(ctx, req.Question)
 		if err != nil {
 			utils.Warning("语义缓存查询失败", utils.LogFields{
@@ -491,7 +491,7 @@ func (s *QueryService) QueryStream(ctx context.Context, req appmodel.RAGQueryReq
 	answer = ragchain.ApplyAnswerGuard(prepared.Request, prepared.Chunks, answer)
 
 	// 2. 写入语义缓存（异步执行，避免阻塞响应）
-	if s.semanticCache != nil {
+	if s.semanticCache != nil && shouldUseSemanticCache(req) {
 		go func() {
 			if err := s.semanticCache.Set(context.Background(), req.Question, answer); err != nil {
 				utils.Warning("语义缓存写入失败（流式查询）", utils.LogFields{
@@ -603,4 +603,8 @@ func (s *QueryService) RetrieveEvidence(ctx context.Context, req appmodel.RAGQue
 		return nil, err
 	}
 	return chunks, nil
+}
+
+func shouldUseSemanticCache(req appmodel.RAGQueryRequest) bool {
+	return strings.TrimSpace(req.SystemPrompt) == ""
 }

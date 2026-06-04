@@ -3,14 +3,45 @@ package agent
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 )
+
+// DebatePeerArgument 其他参与者在当前轮次之前的发言（供下一轮引用/反驳）。
+type DebatePeerArgument struct {
+	Name     string
+	Role     string
+	Argument string
+}
+
+// DebateArgumentGenerator 自定义论点生成（如投资角色圆桌的 LLM 发言）。
+type DebateArgumentGenerator interface {
+	GenerateArgument(
+		ctx context.Context,
+		profile *AgentProfile,
+		taskState *TaskState,
+		peerArguments []DebatePeerArgument,
+		round int,
+	) (string, error)
+}
+
+// DebateConclusionGenerator 自定义辩论结论生成。
+type DebateConclusionGenerator interface {
+	GenerateConclusion(
+		ctx context.Context,
+		arguments []string,
+		profiles []*AgentProfile,
+		taskState *TaskState,
+	) (string, error)
+}
 
 // DebateCoordinator 辩论模式协调器
 // 多个 Agent 针对同一问题进行辩论，最终达成共识
 type DebateCoordinator struct {
 	*BaseCoordinator
-	maxRounds int
+	maxRounds           int
+	argumentGenerator   DebateArgumentGenerator
+	conclusionGenerator DebateConclusionGenerator
 }
 
 // NewDebateCoordinator 创建辩论协调器
@@ -24,7 +55,36 @@ func NewDebateCoordinator(profileRegistry *ProfileRegistry, agentBuilder *AgentB
 
 // SetMaxRounds 设置最大辩论轮数
 func (c *DebateCoordinator) SetMaxRounds(rounds int) {
+	if rounds < 1 {
+		rounds = 1
+	}
 	c.maxRounds = rounds
+}
+
+// SetArgumentGenerator 注入自定义论点生成器（未设置时使用工具链或默认模板）。
+func (c *DebateCoordinator) SetArgumentGenerator(g DebateArgumentGenerator) {
+	c.argumentGenerator = g
+}
+
+// SetConclusionGenerator 注入自定义结论生成器。
+func (c *DebateCoordinator) SetConclusionGenerator(g DebateConclusionGenerator) {
+	c.conclusionGenerator = g
+}
+
+// BuildDebatePeerArguments 收集除当前发言者外、已有非空论点。
+func BuildDebatePeerArguments(profiles []*AgentProfile, arguments []string, selfIdx int) []DebatePeerArgument {
+	peers := make([]DebatePeerArgument, 0, len(profiles))
+	for i, p := range profiles {
+		if i == selfIdx || arguments[i] == "" {
+			continue
+		}
+		peers = append(peers, DebatePeerArgument{
+			Name:     p.Name,
+			Role:     p.Role,
+			Argument: arguments[i],
+		})
+	}
+	return peers
 }
 
 // Execute 执行辩论协调逻辑
@@ -97,6 +157,11 @@ func (c *DebateCoordinator) Execute(ctx context.Context, taskState *TaskState) (
 // generateArgument 生成论点
 // 真正调用对应 profile 的工具来生成论点
 func (c *DebateCoordinator) generateArgument(ctx context.Context, profile *AgentProfile, taskState *TaskState, arguments []string, round, idx int) (string, error) {
+	if c.argumentGenerator != nil {
+		peers := BuildDebatePeerArguments(c.GetAgentProfiles(), arguments, idx)
+		return c.argumentGenerator.GenerateArgument(ctx, profile, taskState, peers, round)
+	}
+
 	// 使用 profile 中配置的工具生成论点
 	if len(profile.AvailableTools) > 0 {
 		return c.generateArgumentWithTools(ctx, profile, taskState, arguments, round, idx)
@@ -160,6 +225,12 @@ func (c *DebateCoordinator) defaultGenerateArgument(profile *AgentProfile, task 
 
 // generateConclusion 生成最终结论
 func (c *DebateCoordinator) generateConclusion(ctx context.Context, arguments []string, profiles []*AgentProfile, taskState *TaskState) string {
+	if c.conclusionGenerator != nil {
+		if summary, err := c.conclusionGenerator.GenerateConclusion(ctx, arguments, profiles, taskState); err == nil && strings.TrimSpace(summary) != "" {
+			return summary
+		}
+	}
+
 	// 尝试使用 planner profile 的工具生成结论
 	if TaskPlannerProfile != nil && len(TaskPlannerProfile.AvailableTools) > 0 {
 		var toolResults []string

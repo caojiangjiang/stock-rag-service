@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>每日风格选股 - Stock RAG</title>
+    <link rel="stylesheet" href="css/app.css?v=5">
+    <link rel="stylesheet" href="css/persona.css?v=5">
+</head>
+<body>
+    <div class="daily-picks-page">
+        <div class="risk-banner">
+            <p>⚠️ 风险提示：本工具仅用于研究辅助，不构成投资建议。投资有风险，决策需谨慎。</p>
+        </div>
+
+        <div class="daily-picks-container">
+            <div class="picks-header">
+                <div>
+                    <h1>每日风格观察名单</h1>
+                    <p class="last-update" id="last-update">上次更新：暂无数据</p>
+                </div>
+                <a href="index.html" class="back-link">← 返回首页</a>
+            </div>
+
+            <div class="filter-bar">
+                <div class="filter-group">
+                    <label for="date-select">日期</label>
+                    <input type="date" id="date-select" value="">
+                </div>
+                <div class="filter-group">
+                    <label for="market-select">市场</label>
+                    <select id="market-select">
+                        <option value="">全部</option>
+                        <option value="us">美股</option>
+                        <option value="cn">A股</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="picks-action-bar">
+                <button type="button" class="btn btn-primary" id="run-picks-btn">生成今日推荐</button>
+                <button type="button" class="btn btn-secondary" id="refresh-btn">刷新</button>
+            </div>
+
+            <div class="persona-tabs" id="persona-tabs"></div>
+
+            <div class="picks-grid" id="picks-grid">
+                <div class="no-data">
+                    <h3>暂无选股数据</h3>
+                    <p>点击「生成今日推荐」获取结果，或等待每日定时任务自动生成</p>
+                </div>
+            </div>
+
+            <div class="picks-disclaimer">
+                基于公开资料生成，仅供研究辅助，不构成投资建议。投资有风险，决策需谨慎。
+            </div>
+        </div>
+    </div>
+
+    <div class="picks-loading-overlay" id="loading-overlay" style="display: none;">
+        <div class="picks-loading-content">
+            <div class="picks-loading-spinner"></div>
+            <p>正在生成选股推荐…</p>
+            <p style="font-size: 0.8rem; color: var(--muted); margin-top: 8px;">此过程可能需要几分钟，请耐心等待</p>
+        </div>
+    </div>
+
+    <script src="js/auth.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', async () => {
+            const ok = await Auth.ensureAuthenticated({ redirect: true });
+            if (!ok) return;
+
+            initDailyPicks();
+        });
+
+        async function initDailyPicks() {
+            const today = new Date().toISOString().split('T')[0];
+            document.getElementById('date-select').value = today;
+
+            document.getElementById('run-picks-btn').addEventListener('click', runPicks);
+            document.getElementById('refresh-btn').addEventListener('click', loadPicks);
+            document.getElementById('date-select').addEventListener('change', loadPicks);
+            document.getElementById('market-select').addEventListener('change', onMarketFilterChange);
+
+            await loadPicks();
+        }
+
+        let cachedPicksList = [];
+
+        function onMarketFilterChange() {
+            const activeTab = document.querySelector('.persona-tab.active');
+            if (!activeTab) return;
+            const personaId = activeTab.dataset.personaId;
+            const item = cachedPicksList.find(p => p.persona.id === personaId);
+            if (item) {
+                const market = document.getElementById('market-select').value;
+                renderPicks(item.picks, market);
+            }
+        }
+
+        async function loadPicks() {
+            const date = document.getElementById('date-select').value;
+
+            try {
+                const url = new URL('/api/personas/daily-picks', window.location.origin);
+                if (date) url.searchParams.set('date', date);
+
+                const response = await Auth.authFetch(url.toString());
+                const data = await response.json();
+
+                if (data.picks && data.picks.length > 0) {
+                    cachedPicksList = data.picks;
+                    document.getElementById('last-update').textContent = `上次更新：${formatTime(data.updated_at)}`;
+                    renderPersonaTabs(data.picks);
+                    const market = document.getElementById('market-select').value;
+                    renderPicks(data.picks[0].picks, market);
+                } else {
+                    cachedPicksList = [];
+                    renderEmptyState();
+                }
+            } catch (error) {
+                console.error('Failed to load picks:', error);
+                cachedPicksList = [];
+                renderEmptyState();
+            }
+        }
+
+        async function runPicks() {
+            const button = document.getElementById('run-picks-btn');
+            const loading = document.getElementById('loading-overlay');
+
+            button.disabled = true;
+            loading.style.display = 'flex';
+
+            try {
+                const response = await Auth.authFetch('/api/personas/daily-picks/run', {
+                    method: 'POST',
+                });
+                if (!response.ok) {
+                    throw new Error('run failed');
+                }
+                await response.json();
+
+                await new Promise(resolve => setTimeout(resolve, 2000));
+                await loadPicks();
+            } catch (error) {
+                console.error('Failed to run picks:', error);
+                alert('生成失败，请稍后重试');
+            } finally {
+                button.disabled = false;
+                loading.style.display = 'none';
+            }
+        }
+
+        function renderPersonaTabs(picksList) {
+            const container = document.getElementById('persona-tabs');
+            container.innerHTML = '';
+
+            picksList.forEach((item, index) => {
+                const tab = document.createElement('button');
+                tab.type = 'button';
+                tab.className = `persona-tab ${index === 0 ? 'active' : ''}`;
+                tab.dataset.personaId = item.persona.id;
+                tab.textContent = item.persona.name;
+
+                if (item.total_count === 0) {
+                    tab.classList.add('disabled');
+                }
+
+                tab.addEventListener('click', () => {
+                    if (tab.classList.contains('disabled')) return;
+                    document.querySelectorAll('.persona-tab').forEach(t => t.classList.remove('active'));
+                    tab.classList.add('active');
+                    const market = document.getElementById('market-select').value;
+                    renderPicks(item.picks, market);
+                });
+
+                container.appendChild(tab);
+            });
+        }
+
+        function renderPicks(picks, marketFilter) {
+            const container = document.getElementById('picks-grid');
+
+            if (!picks || picks.length === 0) {
+                renderEmptyState();
+                return;
+            }
+
+            let filteredPicks = picks;
+            if (marketFilter) {
+                filteredPicks = picks.filter(p => p.market.toLowerCase().includes(marketFilter));
+            }
+
+            if (filteredPicks.length === 0) {
+                container.innerHTML = `
+                    <div class="no-data">
+                        <h3>该市场暂无数据</h3>
+                        <p>尝试选择其他市场或等待数据生成</p>
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = filteredPicks.map(pick => `
+                <div class="stock-card">
+                    <div class="stock-header">
+                        <div class="stock-rank">${pick.rank}</div>
+                        <div class="stock-info">
+                            <div class="stock-symbol">${escapeHtml(pick.symbol)}</div>
+                            <div class="stock-name">${escapeHtml(pick.company_name)}</div>
+                        </div>
+                        <div class="stock-score">${pick.score.toFixed(1)} 分</div>
+                    </div>
+                    <div class="stock-tags">
+                        ${pick.sector_tags.map(tag => `<span class="tag">${escapeHtml(tag)}</span>`).join('')}
+                    </div>
+                    <div class="section-title">入选理由</div>
+                    <ul class="reason-list">
+                        ${pick.inclusion_reason.map(r => `<li>${escapeHtml(r)}</li>`).join('')}
+                    </ul>
+                    <div class="section-title">风险提示</div>
+                    <ul class="risk-list">
+                        ${pick.risk_tips.map(r => `<li>${escapeHtml(r)}</li>`).join('')}
+                    </ul>
+                </div>
+            `).join('');
+        }
+
+        function renderEmptyState() {
+            document.getElementById('picks-grid').innerHTML = `
+                <div class="no-data">
+                    <h3>暂无选股数据</h3>
+                    <p>点击「生成今日推荐」获取选股结果</p>
+                </div>
+            `;
+            document.getElementById('persona-tabs').innerHTML = '';
+            document.getElementById('last-update').textContent = '上次更新：暂无数据';
+        }
+
+        function formatTime(timestamp) {
+            if (!timestamp) return '暂无数据';
+            const date = new Date(timestamp);
+            return date.toLocaleString('zh-CN', {
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+            });
+        }
+
+        function escapeHtml(str) {
+            const div = document.createElement('div');
+            div.textContent = str ?? '';
+            return div.innerHTML;
+        }
+    </script>
+</body>
+</html>

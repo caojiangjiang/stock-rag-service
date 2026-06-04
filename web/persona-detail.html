@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>投资角色详情 - Stock RAG</title>
+    <link rel="stylesheet" href="css/app.css?v=5">
+    <link rel="stylesheet" href="css/persona.css?v=5">
+</head>
+<body>
+    <div class="persona-detail-page">
+        <div class="risk-banner">
+            <p>⚠️ 风险提示：本工具仅用于研究辅助，不构成投资建议。投资有风险，决策需谨慎。</p>
+        </div>
+
+        <header class="detail-header">
+            <a href="personas.html" class="back-link">← 返回角色列表</a>
+            <div id="detail-header-inner" class="detail-header-inner">
+                <div class="loading-state">
+                    <div class="loading-dots">
+                        <span></span>
+                        <span></span>
+                        <span></span>
+                    </div>
+                    <p>加载中...</p>
+                </div>
+            </div>
+        </header>
+
+        <main id="detail-content" class="detail-content">
+            <div class="loading-state">
+                <div class="loading-dots">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </div>
+                <p>加载中...</p>
+            </div>
+        </main>
+
+        <footer class="action-bar">
+            <div class="action-bar-inner">
+                <button type="button" class="btn btn-primary" onclick="startChat()">
+                    💬 和 TA 单聊
+                </button>
+                <button type="button" class="btn btn-secondary" onclick="addToRoundtable()">
+                    圆桌讨论
+                </button>
+            </div>
+        </footer>
+
+        <script src="js/auth.js"></script>
+        <script src="js/persona-api.js"></script>
+        <script>
+            let currentPersona = null;
+
+            async function init() {
+                const ok = await Auth.ensureAuthenticated({ redirect: true });
+                if (!ok) return;
+                
+                const params = new URLSearchParams(window.location.search);
+                const personaId = params.get('id');
+                
+                if (!personaId) {
+                    document.getElementById('detail-header-inner').innerHTML = '<p class="error-state">缺少角色 ID</p>';
+                    return;
+                }
+                
+                await loadPersona(personaId);
+            }
+
+            async function loadPersona(id) {
+                try {
+                    currentPersona = await PersonaAPI.getPersona(id);
+                    renderHeader(currentPersona);
+                    renderContent(currentPersona);
+                } catch (error) {
+                    document.getElementById('detail-header-inner').innerHTML = `<p class="error-state">${error.message}</p>`;
+                    document.getElementById('detail-content').innerHTML = '';
+                }
+            }
+
+            function renderHeader(persona) {
+                const html = `
+                    <div class="detail-hero">
+                        <div class="detail-avatar">${getAvatarEmoji(persona.persona_id)}</div>
+                        <div class="detail-title-section">
+                            <h1>${persona.name}</h1>
+                            <p class="oneline">${persona.one_liner}</p>
+                            <div class="detail-tags">
+                                <span class="tag ${persona.market === 'us' ? 'market-us' : 'market-cn'}">
+                                    ${persona.market === 'us' ? '美股' : 'A股'}
+                                </span>
+                                ${(persona.style_tags || []).map(tag => 
+                                    `<span class="tag ${getStyleClass(tag)}">${getStyleName(tag)}</span>`
+                                ).join('')}
+                            </div>
+                        </div>
+                    </div>
+                `;
+                document.getElementById('detail-header-inner').innerHTML = html;
+            }
+
+            function renderContent(persona) {
+                const perf = persona.performance || {};
+                
+                const html = `
+                    <section class="section">
+                        <h3>投资理念</h3>
+                        <p style="color: var(--text); line-height: 1.6;">${persona.investment_belief}</p>
+                    </section>
+
+                    <section class="section">
+                        <h3>决策框架</h3>
+                        <ul style="list-style: none; padding: 0;">
+                            ${(persona.decision_framework || []).map((item, i) => 
+                                `<li style="padding: 8px 0; padding-left: 20px; position: relative;">
+                                    <span style="position: absolute; left: 0; color: var(--accent-2); font-weight: 600;">${i + 1}.</span>
+                                    ${item}
+                                </li>`
+                            ).join('')}
+                        </ul>
+                    </section>
+
+                    <section class="section">
+                        <h3>业绩概览</h3>
+                        <div class="performance-grid">
+                            <div class="perf-card">
+                                <div class="label">年化收益</div>
+                                <div class="value ${perf.return_1y >= 0 ? 'positive' : 'negative'}">${formatPercent(perf.return_1y)}</div>
+                            </div>
+                            <div class="perf-card">
+                                <div class="label">最大回撤</div>
+                                <div class="value negative">${formatPercent(perf.max_drawdown_1y)}</div>
+                            </div>
+                            <div class="perf-card">
+                                <div class="label">夏普比率</div>
+                                <div class="value">${perf.sharpe_1y || '-'}x</div>
+                            </div>
+                            <div class="perf-card">
+                                <div class="label">换手率</div>
+                                <div class="value">${formatPercent(perf.turnover_rate)}</div>
+                            </div>
+                            <div class="perf-card">
+                                <div class="label">集中度</div>
+                                <div class="value">${formatPercent(perf.concentration)}</div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section class="section">
+                        <h3>偏好行业</h3>
+                        <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                            ${(persona.preferred_sectors || []).map(sector => 
+                                `<span style="padding: 4px 10px; background: var(--bg-elevated); border-radius: 4px; font-size: 0.8rem;">${sector}</span>`
+                            ).join('')}
+                        </div>
+                    </section>
+
+                    <section class="section">
+                        <h3>市场环境适配性</h3>
+                        <div class="market-conditions">
+                            <div class="condition-box suitable">
+                                <h4>✅ 适配环境</h4>
+                                <ul>
+                                    ${(persona.suitable_market_conditions || []).map(c => `<li>${c}</li>`).join('')}
+                                </ul>
+                            </div>
+                            <div class="condition-box unsuitable">
+                                <h4>❌ 失效环境</h4>
+                                <ul>
+                                    ${(persona.unsuitable_market_conditions || []).map(c => `<li>${c}</li>`).join('')}
+                                </ul>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section class="section">
+                        <h3>典型风险</h3>
+                        <ul style="list-style: none; padding: 0;">
+                            ${(persona.typical_risks || []).map(risk => 
+                                `<li style="padding: 6px 0; padding-left: 16px; position: relative;">
+                                    <span style="position: absolute; left: 0; top: 2px;">⚠️</span>
+                                    ${risk}
+                                </li>`
+                            ).join('')}
+                        </ul>
+                    </section>
+
+                    <section class="section">
+                        <h3>代表性问题</h3>
+                        <div class="rep-questions">
+                            ${(persona.representative_questions || []).map(q => 
+                                `<button onclick="startChatWithQuestion('${encodeURIComponent(q)}')">${q}</button>`
+                            ).join('')}
+                        </div>
+                    </section>
+                `;
+                document.getElementById('detail-content').innerHTML = html;
+            }
+
+            function getAvatarEmoji(personaId) {
+                const emojis = {
+                    'us_growth_tech': '🚀',
+                    'us_value_recovery': '📊',
+                    'us_momentum': '⚡',
+                    'cn_dividend_defensive': '🛡️',
+                    'cn_growth': '🌱',
+                    'cn_momentum': '🔥'
+                };
+                return emojis[personaId] || '👤';
+            }
+
+            function getStyleClass(tag) {
+                const classes = {
+                    'growth': 'style-growth',
+                    'value': 'style-value',
+                    'dividend': 'style-dividend',
+                    'momentum': 'style-momentum',
+                    'tech': 'style-growth',
+                    'ai': 'style-growth',
+                    'defensive': 'style-dividend'
+                };
+                return classes[tag] || 'style-growth';
+            }
+
+            function getStyleName(tag) {
+                const names = {
+                    'growth': '成长',
+                    'value': '价值',
+                    'dividend': '高股息',
+                    'momentum': '动量',
+                    'tech': '科技',
+                    'ai': 'AI',
+                    'defensive': '防御'
+                };
+                return names[tag] || tag;
+            }
+
+            function formatPercent(value) {
+                if (value === undefined || value === null) return '-';
+                return `${value}%`;
+            }
+
+            function startChat() {
+                if (currentPersona) {
+                    window.location.href = `persona-chat.html?id=${currentPersona.persona_id}`;
+                }
+            }
+
+            function startChatWithQuestion(question) {
+                if (currentPersona) {
+                    window.location.href = `persona-chat.html?id=${currentPersona.persona_id}&question=${question}`;
+                }
+            }
+
+            function addToRoundtable() {
+                window.location.href = `persona-roundtable.html?persona=${currentPersona.persona_id}`;
+            }
+
+            document.addEventListener('DOMContentLoaded', init);
+        </script>
+    </div>
+</body>
+</html>

@@ -44,7 +44,14 @@
   function renderUserHeader() {
     const user = Auth.getUser();
     const el = document.getElementById('username-display');
-    if (user && el) el.textContent = user.username;
+    const avatarEl = document.getElementById('user-avatar');
+    if (user && el) {
+      el.textContent = user.username;
+    }
+    if (user && avatarEl) {
+      const initial = user.username ? user.username.charAt(0).toUpperCase() : 'U';
+      avatarEl.textContent = initial;
+    }
   }
 
   async function loadConversations() {
@@ -382,10 +389,45 @@
     const text = input?.value.trim();
     if (!text || isSending) return;
     if (!currentConversationID) currentConversationID = 'conversation-' + Date.now();
+    
+    const isFirstMessage = chatContainer().children.length === 0 || 
+                          (chatContainer().children.length === 1 && 
+                           chatContainer().children[0].querySelector('.message-content')?.textContent?.includes('你好！我是 Stock RAG'));
+    
     addMessage(text, 'user');
     input.value = '';
     input.style.height = 'auto';
+    
+    if (isFirstMessage) {
+      await updateConversationTitle(text);
+    }
+    
     await sendRequestStream(text);
+  }
+
+  async function updateConversationTitle(title) {
+    if (!currentConversationID) return;
+    
+    try {
+      const res = await Auth.authFetch('/api/conversations', {
+        method: 'PUT',
+        body: JSON.stringify({ 
+          conversation_id: currentConversationID, 
+          title: truncateTitle(title) 
+        }),
+      });
+      if (res.ok) {
+        currentConversationTitle().textContent = truncateTitle(title);
+        await loadConversations();
+      }
+    } catch (e) {
+      console.error('Failed to update conversation title:', e);
+    }
+  }
+
+  function truncateTitle(title) {
+    if (title.length <= 30) return title;
+    return title.substring(0, 30) + '...';
   }
 
   function bindComposer() {

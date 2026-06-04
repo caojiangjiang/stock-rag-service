@@ -81,7 +81,7 @@ func main() {
 		ToolRegistry:        einotools.GetGlobalRegistry(),
 		RedisClient:         redisClient,
 	})
-	mux := api.NewRouter(querySvc, taskAgentService, authService, jwtSecret, chatService, conversationStore, pgConversationStore.DB(), redisClient)
+	mux := api.NewRouter(querySvc, taskAgentService, authService, jwtSecret, chatService, conversationStore, pgConversationStore.DB(), redisClient, coordinatorFactory)
 
 	// 限流中间件
 	rateLimiter := initRateLimiter(redisClient)

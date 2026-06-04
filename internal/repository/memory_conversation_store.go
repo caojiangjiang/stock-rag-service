@@ -96,6 +96,21 @@ func (m *MemoryConversationStore) DeleteConversation(ctx context.Context, conver
 	return nil
 }
 
+func (m *MemoryConversationStore) UpdateConversationTitle(ctx context.Context, conversationID, title string) error {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+
+	conversation, ok := m.conversations[conversationID]
+	if !ok {
+		return ErrNotFound
+	}
+
+	conversation.Title = title
+	conversation.UpdatedAt = time.Now().Unix()
+
+	return nil
+}
+
 func (m *MemoryConversationStore) SaveMessage(ctx context.Context, message *Message) error {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()

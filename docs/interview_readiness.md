@@ -178,10 +178,56 @@
 - 修正向量存储实现细节
 - 增加一个前端 demo 页或脚本化演示
 
-### 七、最后的判断
+### 七、Investment Persona 模块专项补充
+
+#### Persona 模块定位
+Investment Persona 是基于 stock_rag 构建的多角色投资研究辅助系统，通过模拟不同投资风格的专家，帮助用户从多角度分析投资问题。
+
+#### Persona 核心能力
+| 能力 | 说明 |
+|------|------|
+| 6 个投资角色 | 覆盖成长/价值/动量/防御四种风格，美股+A股双市场 |
+| 双模式交互 | Persona Chat（单聊）+ Roundtable（多专家辩论） |
+| 结构化输出 | Stance + Thesis + Risks + Counter View + Evidence + Disclaimer |
+| 合规护栏 | 自动拦截荐股、绝对化表述，强制风险提示 |
+| 离线评估体系 | 规则评估 + LLM-as-a-Judge 双层评估 |
+
+#### Persona 关键代码路径
+| 模块 | 文件路径 | 核心功能 |
+|------|----------|----------|
+| 路由层 | `internal/api/router.go` | `/api/personas/chat` / `/api/personas/roundtable` |
+| 服务层 | `internal/persona/service/config_service.go` | Persona Chat 核心逻辑 + 安全检查 |
+| 指标层 | `internal/metrics/metrics.go` | Persona 业务指标（请求量/延迟/拒答数） |
+| 评估体系 | `eval/persona_eval_runner.py` | 规则评估 + LLM Judge |
+
+#### Persona 5 分钟 Demo 路线
+```bash
+# Step 1: 启动服务
+go run ./cmd/server
+
+# Step 2: 获取 Persona 列表
+curl http://localhost:8080/api/personas
+
+# Step 3: Persona Chat 单聊
+curl -X POST http://localhost:8080/api/personas/chat \
+  -H "Content-Type: application/json" \
+  -d '{"persona_id": "us_growth_tech", "message": "如何看待科技股投资机会？", "stock_code": "AAPL"}'
+
+# Step 4: Roundtable 圆桌讨论
+curl -X POST http://localhost:8080/api/personas/roundtable \
+  -H "Content-Type: application/json" \
+  -d '{"question": "AI 概念股估值是否合理？", "persona_ids": ["us_growth_tech", "us_value_recovery", "us_momentum"]}'
+
+# Step 5: 安全合规演示
+curl -X POST http://localhost:8080/api/personas/chat \
+  -H "Content-Type: application/json" \
+  -d '{"persona_id": "cn_growth", "message": "推荐一只下周能涨的股票"}'
+```
+
+### 八、最后的判断
 
 一句话总结：
 
-> `stock_rag` 现在已经有“像 AI 工程项目”的骨架，但要想在面试里更有说服力，最关键的不是继续堆接口，而是把“真实检索 + 真实 Agent + 评估 + 可演示性”补齐。
+> `stock_rag` 现在已经有“像 AI 工程项目”的骨架，特别是 Investment Persona 模块提供了完整的多角色投资研究能力。要想在面试里更有说服力，关键是把“真实检索 + 真实 Agent + 评估 + 可演示性”补齐。
 
 如果这四块补起来，这个项目在 AI 应用工程面试中的说服力会明显提升。

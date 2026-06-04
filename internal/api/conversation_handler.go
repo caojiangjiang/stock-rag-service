@@ -164,3 +164,39 @@ func (h *ConversationHandler) CreateConversation(w http.ResponseWriter, r *http.
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(conversation)
 }
+
+// UpdateConversation 更新对话标题
+func (h *ConversationHandler) UpdateConversation(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPut {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		ConversationID string `json:"conversation_id"`
+		Title          string `json:"title"`
+	}
+
+	decoder := json.NewDecoder(r.Body)
+	if err := decoder.Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if req.ConversationID == "" {
+		http.Error(w, "缺少 conversation_id", http.StatusBadRequest)
+		return
+	}
+
+	err := h.store.UpdateConversationTitle(r.Context(), req.ConversationID, req.Title)
+	if err != nil {
+		if err == repository.ErrNotFound {
+			http.Error(w, "对话不存在", http.StatusNotFound)
+		} else {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}

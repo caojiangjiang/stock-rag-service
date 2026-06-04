@@ -8,6 +8,10 @@ type RAGQueryRequest struct {
 	DocTypes     []string `json:"doc_types,omitempty"`
 	TopK         int      `json:"top_k,omitempty"`
 	UseLocalOnly bool     `json:"use_local_only,omitempty"`
+	// SystemPrompt 非空时替换默认「股票投研助手」系统提示（Persona 单聊等场景）
+	SystemPrompt string `json:"system_prompt,omitempty"`
+	// UserQuestion 非空时作为展示给大模型的问题文案（检索仍用 Question）
+	UserQuestion string `json:"user_question,omitempty"`
 }
 
 // Citation 是引用来源结构。

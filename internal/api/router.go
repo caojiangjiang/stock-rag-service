@@ -1,6 +1,7 @@
 package api
 
 import (
+	"log"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -12,7 +13,9 @@ import (
 
 	"stock_rag/internal/agent"
 	"stock_rag/internal/auth"
+	einoagent "stock_rag/internal/eino/agent"
 	"stock_rag/internal/metrics"
+	personaservice "stock_rag/internal/persona/service"
 	"stock_rag/internal/pkg/httpmiddleware"
 	"stock_rag/internal/repository"
 	"stock_rag/internal/service"
@@ -26,7 +29,7 @@ type Route struct {
 }
 
 // NewRouter 注册当前已经接通的 HTTP 路由。
-func NewRouter(querySvc QueryService, taskAgentService *service.TaskAgentService, authService auth.AuthService, jwtSecret string, chatService *agent.ChatService, conversationStore repository.UnifiedConversationStore, postgresDB Pinger, redisClient *redis.Client) *http.ServeMux {
+func NewRouter(querySvc QueryService, taskAgentService *service.TaskAgentService, authService auth.AuthService, jwtSecret string, chatService *agent.ChatService, conversationStore repository.UnifiedConversationStore, postgresDB Pinger, redisClient *redis.Client, coordinatorFactory *einoagent.CoordinatorFactory) *http.ServeMux {
 	mux := http.NewServeMux()
 
 	// 健康检查端点
@@ -79,7 +82,13 @@ func NewRouter(querySvc QueryService, taskAgentService *service.TaskAgentService
 	mux.HandleFunc("/api/chat/stream", longRunning(requireAuth(chatHandler.ChatStream)))
 
 	convHandler := NewConversationHandler(conversationStore)
-	mux.HandleFunc("/api/conversations", requireAuth(convHandler.ListConversations))
+	mux.HandleFunc("/api/conversations", requireAuth(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPut {
+			convHandler.UpdateConversation(w, r)
+		} else {
+			convHandler.ListConversations(w, r)
+		}
+	}))
 	mux.HandleFunc("/api/conversations/get", requireAuth(convHandler.GetConversation))
 	mux.HandleFunc("/api/conversations/messages", requireAuth(convHandler.GetConversationMessages))
 	mux.HandleFunc("/api/conversations/create", requireAuth(convHandler.CreateConversation))
@@ -87,12 +96,74 @@ func NewRouter(querySvc QueryService, taskAgentService *service.TaskAgentService
 
 	RegisterAuthRoutes(mux, authService, jwtSecret)
 
-	// 监控面板路由 - 反向代理到各个监控系统
-	mux.Handle("/monitor/", requireAdmin(createMonitorProxy("http://localhost:3000", "/monitor")))
-	mux.Handle("/prometheus/", requireAdmin(createMonitorProxy("http://localhost:9091", "/prometheus")))
-	mux.Handle("/jaeger/", requireAdmin(createMonitorProxy("http://localhost:16686", "/jaeger")))
-	mux.Handle("/tempo/", requireAdmin(createMonitorProxy("http://localhost:3200", "/tempo")))
-	mux.Handle("/loki/", requireAdmin(createMonitorProxy("http://localhost:3100", "/loki")))
+	// Investment Persona 模块路由
+	enablePersonaModule := strings.EqualFold(strings.TrimSpace(os.Getenv("ENABLE_PERSONA_MODULE")), "true")
+	if enablePersonaModule {
+		// 尝试加载配置，如果失败则回退到 mock
+		var personaSvc personaservice.PersonaService
+		configSvc, err := personaservice.NewConfigPersonaService("configs/personas.yaml", querySvc, coordinatorFactory)
+		if err != nil {
+			log.Printf("Warning: Failed to load persona config, using mock: %v", err)
+			personaSvc = personaservice.NewMockPersonaService()
+		} else {
+			log.Println("Persona config loaded successfully")
+			personaSvc = configSvc
+
+			// 初始化每日选股服务（仅在配置加载成功时）
+			enableDailyPicks := strings.EqualFold(strings.TrimSpace(os.Getenv("ENABLE_PERSONA_DAILY_PICKS")), "true")
+			if enableDailyPicks {
+				dailyPicksSvc, err := personaservice.NewDailyPicksService(
+					"configs/personas.yaml",
+					"configs/persona_daily_picks_universe.yaml",
+					querySvc,
+				)
+				if err != nil {
+					log.Printf("Warning: Failed to load daily picks service: %v", err)
+				} else {
+					log.Println("Daily picks service loaded successfully")
+					dailyPicksHandler := NewDailyPicksHandler(dailyPicksSvc)
+					mux.HandleFunc("/api/personas/daily-picks", dailyPicksHandler.GetDailyPicks)
+					mux.HandleFunc("/api/personas/daily-picks/run", requireAdmin(dailyPicksHandler.RunManualTrigger))
+				}
+			}
+		}
+
+		personaHandler := NewPersonaHandler(personaSvc)
+		mux.HandleFunc("/api/personas", personaHandler.ListPersonas)
+		mux.HandleFunc("/api/personas/{id}", personaHandler.GetPersona)
+		mux.HandleFunc("/api/personas/chat", requireAuth(personaHandler.Chat))
+
+		// Roundtable 独立 feature flag
+		enablePersonaRoundtable := strings.EqualFold(strings.TrimSpace(os.Getenv("ENABLE_PERSONA_ROUNDTABLE")), "true")
+		if enablePersonaRoundtable {
+			mux.HandleFunc("/api/personas/roundtable", requireAuth(personaHandler.Roundtable))
+		} else {
+			mux.HandleFunc("/api/personas/roundtable", func(w http.ResponseWriter, r *http.Request) {
+				http.NotFound(w, r)
+			})
+		}
+	} else {
+		// feature flag 关闭时返回 404
+		mux.HandleFunc("/api/personas", func(w http.ResponseWriter, r *http.Request) {
+			http.NotFound(w, r)
+		})
+		mux.HandleFunc("/api/personas/{id}", func(w http.ResponseWriter, r *http.Request) {
+			http.NotFound(w, r)
+		})
+		mux.HandleFunc("/api/personas/chat", func(w http.ResponseWriter, r *http.Request) {
+			http.NotFound(w, r)
+		})
+		mux.HandleFunc("/api/personas/roundtable", func(w http.ResponseWriter, r *http.Request) {
+			http.NotFound(w, r)
+		})
+	}
+
+	// 监控面板路由 - 反向代理到各个监控系统（移除认证保护，因为新标签页无法传递 Authorization header）
+	mux.Handle("/monitor/", createMonitorProxy("http://localhost:3000", "/monitor"))
+	mux.Handle("/prometheus/", createMonitorProxy("http://localhost:9091", "/prometheus"))
+	mux.Handle("/jaeger/", createMonitorProxy("http://localhost:16686", "/jaeger"))
+	mux.Handle("/tempo/", createMonitorProxy("http://localhost:3200", "/tempo"))
+	mux.Handle("/loki/", createMonitorProxy("http://localhost:3100", "/loki"))
 
 	// 静态文件服务，用于前端界面
 	mux.Handle("/", http.FileServer(http.Dir("web")))
