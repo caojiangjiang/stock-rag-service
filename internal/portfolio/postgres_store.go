@@ -33,6 +33,7 @@ func (s *PostgresStore) Init(ctx context.Context) error {
 			cost_price NUMERIC(18,4) NOT NULL DEFAULT 0,
 			currency TEXT DEFAULT 'CNY',
 			thesis TEXT,
+			falsification TEXT,
 			opened_at TIMESTAMPTZ,
 			updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 		);
@@ -42,6 +43,7 @@ func (s *PostgresStore) Init(ctx context.Context) error {
 		return err
 	}
 	_, _ = s.pool.Exec(ctx, `ALTER TABLE portfolio_positions ADD COLUMN IF NOT EXISTS asset_type TEXT NOT NULL DEFAULT 'stock'`)
+	_, _ = s.pool.Exec(ctx, `ALTER TABLE portfolio_positions ADD COLUMN IF NOT EXISTS falsification TEXT`)
 	_, _ = s.pool.Exec(ctx, `ALTER TABLE portfolio_positions DROP CONSTRAINT IF EXISTS portfolio_positions_user_id_stock_code_key`)
 	_, err = s.pool.Exec(ctx, `
 		CREATE UNIQUE INDEX IF NOT EXISTS uq_portfolio_user_asset_code
@@ -53,7 +55,7 @@ func (s *PostgresStore) Init(ctx context.Context) error {
 func (s *PostgresStore) ListByUser(ctx context.Context, userID string) ([]Position, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT id, user_id, COALESCE(asset_type,'stock'), stock_code, COALESCE(stock_name,''), market,
-		       quantity, cost_price, COALESCE(currency,''), COALESCE(thesis,''),
+		       quantity, cost_price, COALESCE(currency,''), COALESCE(thesis,''), COALESCE(falsification,''),
 		       opened_at, updated_at
 		FROM portfolio_positions
 		WHERE user_id = $1
@@ -70,7 +72,7 @@ func (s *PostgresStore) ListByUser(ctx context.Context, userID string) ([]Positi
 		var openedAt *time.Time
 		if err := rows.Scan(
 			&p.ID, &p.UserID, &p.AssetType, &p.StockCode, &p.StockName, &p.Market,
-			&p.Quantity, &p.CostPrice, &p.Currency, &p.Thesis,
+			&p.Quantity, &p.CostPrice, &p.Currency, &p.Thesis, &p.Falsification,
 			&openedAt, &p.UpdatedAt,
 		); err != nil {
 			return nil, err
@@ -86,7 +88,7 @@ func (s *PostgresStore) ListByUser(ctx context.Context, userID string) ([]Positi
 func (s *PostgresStore) Get(ctx context.Context, userID, id string) (*Position, error) {
 	row := s.pool.QueryRow(ctx, `
 		SELECT id, user_id, COALESCE(asset_type,'stock'), stock_code, COALESCE(stock_name,''), market,
-		       quantity, cost_price, COALESCE(currency,''), COALESCE(thesis,''),
+		       quantity, cost_price, COALESCE(currency,''), COALESCE(thesis,''), COALESCE(falsification,''),
 		       opened_at, updated_at
 		FROM portfolio_positions WHERE user_id = $1 AND id = $2
 	`, userID, id)
@@ -135,8 +137,8 @@ func (s *PostgresStore) Upsert(ctx context.Context, userID string, req UpsertReq
 	row := s.pool.QueryRow(ctx, `
 		INSERT INTO portfolio_positions (
 			id, user_id, asset_type, stock_code, stock_name, market, quantity, cost_price,
-			currency, thesis, opened_at, updated_at
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+			currency, thesis, falsification, opened_at, updated_at
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
 		ON CONFLICT (user_id, asset_type, stock_code) DO UPDATE SET
 			stock_name = EXCLUDED.stock_name,
 			market = EXCLUDED.market,
@@ -144,11 +146,12 @@ func (s *PostgresStore) Upsert(ctx context.Context, userID string, req UpsertReq
 			cost_price = EXCLUDED.cost_price,
 			currency = EXCLUDED.currency,
 			thesis = EXCLUDED.thesis,
+			falsification = EXCLUDED.falsification,
 			updated_at = EXCLUDED.updated_at
 		RETURNING id, user_id, asset_type, stock_code, stock_name, market, quantity, cost_price,
-		          currency, thesis, opened_at, updated_at
+		          currency, thesis, falsification, opened_at, updated_at
 	`, id, userID, assetType, code, req.StockName, market, req.Quantity, req.CostPrice,
-		currency, req.Thesis, now, now)
+		currency, req.Thesis, req.Falsification, now, now)
 
 	var p Position
 	var openedAt *time.Time
@@ -263,8 +266,9 @@ func (s *MemoryStore) Upsert(ctx context.Context, userID string, req UpsertReque
 		Quantity:  req.Quantity,
 		CostPrice: req.CostPrice,
 		Currency:  currency,
-		Thesis:    req.Thesis,
-		OpenedAt:  now,
+		Thesis:        req.Thesis,
+		Falsification: req.Falsification,
+		OpenedAt:      now,
 		UpdatedAt: now,
 	}
 	s.data[userID][id] = p

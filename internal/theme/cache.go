@@ -8,10 +8,10 @@ import (
 	"time"
 )
 
-type snapshotCacheEntry struct {
-	resp *SnapshotResponse
-	at   time.Time
-}
+const (
+	snapshotCacheKey    = "all"
+	symbolIndexCacheKey = "all"
+)
 
 func parseSnapshotCacheTTL() time.Duration {
 	raw := strings.TrimSpace(os.Getenv("THEME_SNAPSHOT_TTL"))
@@ -25,35 +25,50 @@ func parseSnapshotCacheTTL() time.Duration {
 	return d
 }
 
-func (s *Service) cacheGet() (*snapshotCacheEntry, bool) {
-	s.cacheMu.RLock()
-	defer s.cacheMu.RUnlock()
-	if s.cache == nil {
-		return nil, false
+func symbolIndexTTL() time.Duration {
+	raw := strings.TrimSpace(os.Getenv("THEME_SYMBOL_INDEX_TTL"))
+	if raw == "" {
+		return time.Hour
 	}
-	entry, ok := s.cache["all"]
-	if !ok || entry.resp == nil {
-		return nil, false
+	d, err := time.ParseDuration(raw)
+	if err != nil || d < time.Minute {
+		return time.Hour
 	}
-	if time.Since(entry.at) >= s.cacheTTL {
-		return nil, false
-	}
-	return &entry, true
+	return d
 }
 
-func (s *Service) cacheSet(resp *SnapshotResponse) {
-	s.cacheMu.Lock()
-	defer s.cacheMu.Unlock()
-	if s.cache == nil {
-		s.cache = make(map[string]snapshotCacheEntry)
+func (s *Service) cacheGet(ctx context.Context) (*SnapshotResponse, time.Time, bool) {
+	if s.snapshotStore == nil || !s.snapshotStore.Enabled() {
+		return nil, time.Time{}, false
 	}
-	s.cache["all"] = snapshotCacheEntry{resp: resp, at: time.Now()}
+	var resp SnapshotResponse
+	at, ok, err := s.snapshotStore.Get(ctx, snapshotCacheKey, &resp)
+	if err != nil {
+		log.Printf("theme snapshot redis get: %v", err)
+		return nil, time.Time{}, false
+	}
+	if !ok {
+		return nil, time.Time{}, false
+	}
+	return &resp, at, true
 }
 
-func (s *Service) invalidateCache() {
-	s.cacheMu.Lock()
-	defer s.cacheMu.Unlock()
-	delete(s.cache, "all")
+func (s *Service) cacheSet(ctx context.Context, resp *SnapshotResponse) {
+	if s.snapshotStore == nil || !s.snapshotStore.Enabled() || resp == nil {
+		return
+	}
+	if err := s.snapshotStore.Set(ctx, snapshotCacheKey, resp, s.cacheTTL); err != nil {
+		log.Printf("theme snapshot redis set: %v", err)
+	}
+}
+
+func (s *Service) invalidateCache(ctx context.Context) {
+	if s.snapshotStore == nil || !s.snapshotStore.Enabled() {
+		return
+	}
+	if err := s.snapshotStore.Delete(ctx, snapshotCacheKey); err != nil {
+		log.Printf("theme snapshot redis del: %v", err)
+	}
 }
 
 func filterSnapshot(resp *SnapshotResponse, themeID, marketFilter string, cached bool, cachedAt time.Time) *SnapshotResponse {
@@ -93,13 +108,27 @@ func filterSnapshot(resp *SnapshotResponse, themeID, marketFilter string, cached
 	return out
 }
 
-// StartBackgroundRefresh 定时预热主题快照，避免用户点击时触发东财请求。
+// StartBackgroundRefresh 定时预热主题快照；Redis 已有缓存则跳过启动预热。
 func (s *Service) StartBackgroundRefresh(ctx context.Context) {
 	if s.cacheTTL <= 0 {
 		return
 	}
 	go func() {
-		s.warmSnapshot(context.Background())
+		startCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if s.snapshotStore != nil && s.snapshotStore.Enabled() {
+			exists, err := s.snapshotStore.Exists(startCtx, snapshotCacheKey)
+			if err != nil {
+				log.Printf("theme snapshot redis exists: %v", err)
+			} else if exists {
+				log.Println("theme snapshot: redis cache hit, skip startup warm")
+			} else {
+				s.warmSnapshot(context.Background())
+			}
+		} else {
+			s.warmSnapshot(context.Background())
+		}
+
 		ticker := time.NewTicker(s.cacheTTL)
 		defer ticker.Stop()
 		for {
@@ -122,6 +151,11 @@ func (s *Service) warmSnapshot(ctx context.Context) {
 		log.Printf("theme snapshot background refresh: %v", err)
 		return
 	}
-	s.cacheSet(resp)
+	s.cacheSet(ctx, resp)
 	log.Printf("theme snapshot refreshed: %d themes, ttl=%s", len(resp.Themes), s.cacheTTL)
+}
+
+// RedisEnabled 是否已接入 Redis 缓存。
+func (s *Service) RedisEnabled() bool {
+	return s.snapshotStore != nil && s.snapshotStore.Enabled()
 }

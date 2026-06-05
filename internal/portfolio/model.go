@@ -18,8 +18,9 @@ type Position struct {
 	Quantity   float64   `json:"quantity"`
 	CostPrice  float64   `json:"cost_price"`
 	Currency   string    `json:"currency,omitempty"`
-	Thesis     string    `json:"thesis,omitempty"`
-	OpenedAt   time.Time `json:"opened_at,omitempty"`
+	Thesis          string    `json:"thesis,omitempty"`
+	Falsification   string    `json:"falsification,omitempty"`
+	OpenedAt        time.Time `json:"opened_at,omitempty"`
 	UpdatedAt  time.Time `json:"updated_at"`
 }
 
@@ -32,7 +33,8 @@ type UpsertRequest struct {
 	Quantity  float64 `json:"quantity"`
 	CostPrice float64 `json:"cost_price"`
 	Currency  string  `json:"currency,omitempty"`
-	Thesis    string  `json:"thesis,omitempty"`
+	Thesis          string  `json:"thesis,omitempty"`
+	Falsification   string  `json:"falsification,omitempty"`
 }
 
 // PositionView 带行情与盈亏的持仓视图。
@@ -45,6 +47,7 @@ type PositionView struct {
 	UnrealizedPnL  float64 `json:"unrealized_pnl"`
 	UnrealizedPct  float64 `json:"unrealized_pnl_pct"`
 	HasQuote       bool    `json:"has_quote"`
+	QuoteSource    string  `json:"quote_source,omitempty"` // eastmoney | mock | missing
 	WeightPct      float64 `json:"weight_pct,omitempty"`
 }
 

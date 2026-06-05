@@ -18,38 +18,6 @@
                 <button type="button" class="btn btn-primary btn-block" id="new-chat-btn">
                     <span>+</span> 新对话
                 </button>
-                <a href="themes.html" class="btn btn-secondary btn-block">🔥 主题快照</a>
-                <a href="portfolio.html" class="btn btn-secondary btn-block">💼 我的持仓</a>
-                <a href="personas.html" class="btn btn-secondary btn-block">👥 投资角色</a>
-                <a href="persona-daily-picks.html" class="btn btn-secondary btn-block">📊 选股推荐</a>
-                <div class="monitor-dropdown">
-                    <button type="button" class="btn btn-ghost btn-block" id="monitor-btn">
-                        📊 监控面板 ▼
-                    </button>
-                    <div class="monitor-menu" id="monitor-menu">
-                        <a href="http://localhost:3000" target="_blank" class="monitor-item">
-                            <span class="monitor-icon">📈</span>
-                            <div class="monitor-info">
-                                <span class="monitor-name">Grafana</span>
-                                <span class="monitor-desc">监控仪表盘</span>
-                            </div>
-                        </a>
-                        <a href="http://localhost:9091" target="_blank" class="monitor-item">
-                            <span class="monitor-icon">📉</span>
-                            <div class="monitor-info">
-                                <span class="monitor-name">Prometheus</span>
-                                <span class="monitor-desc">指标收集系统</span>
-                            </div>
-                        </a>
-                        <a href="http://localhost:16686" target="_blank" class="monitor-item">
-                            <span class="monitor-icon">🔍</span>
-                            <div class="monitor-info">
-                                <span class="monitor-name">Jaeger</span>
-                                <span class="monitor-desc">链路追踪</span>
-                            </div>
-                        </a>
-                    </div>
-                </div>
             </div>
             <div class="conversations-list" id="conversations-list"></div>
         </aside>
@@ -86,7 +54,7 @@
     <script src="js/vendor/purify.min.js?v=4"></script>
     <script src="js/markdown.js?v=4"></script>
     <script src="js/auth.js"></script>
-    <script src="js/chat-app.js?v=4"></script>
+    <script src="js/chat-app.js?v=6"></script>
     <script>
         document.addEventListener('DOMContentLoaded', async () => {
             const ok = await Auth.ensureAuthenticated({ redirect: true });

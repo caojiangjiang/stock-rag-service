@@ -15,6 +15,7 @@ import (
 	"stock_rag/internal/api"
 	"stock_rag/internal/auth"
 	"stock_rag/internal/cache"
+	"stock_rag/internal/decision"
 	einoagent "stock_rag/internal/eino/agent"
 	einomodel "stock_rag/internal/eino/model"
 	ragretriever "stock_rag/internal/eino/retriever"
@@ -86,13 +87,14 @@ func main() {
 	})
 	marketProvider := initMarketProvider()
 	portfolioSvc := initPortfolioService(ctx, pgConversationStore, marketProvider)
-	themeSvc := initThemeService(marketProvider)
+	themeSvc := initThemeService(marketProvider, redisClient)
 	themeSvc.StartBackgroundRefresh(ctx)
+	decisionSvc := initDecisionService(portfolioSvc, themeSvc, redisClient)
 	var pgPool api.Pinger
 	if pgConversationStore != nil {
 		pgPool = pgConversationStore.DB()
 	}
-	mux := api.NewRouter(querySvc, taskAgentService, authService, jwtSecret, chatService, conversationStore, pgPool, redisClient, coordinatorFactory, portfolioSvc, themeSvc)
+	mux := api.NewRouter(querySvc, taskAgentService, authService, jwtSecret, chatService, conversationStore, pgPool, redisClient, coordinatorFactory, portfolioSvc, themeSvc, decisionSvc)
 
 	// 限流中间件
 	rateLimiter := initRateLimiter(redisClient)
@@ -588,7 +590,7 @@ func initPortfolioService(ctx context.Context, pgStore *repository.PostgresConve
 	return svc
 }
 
-func initThemeService(provider market.Provider) *theme.Service {
+func initThemeService(provider market.Provider, redisClient *redis.Client) *theme.Service {
 	regPath := os.Getenv("THEME_REGISTRY_CONFIG")
 	if regPath == "" {
 		regPath = "configs/theme_registry.yaml"
@@ -597,5 +599,27 @@ func initThemeService(provider market.Provider) *theme.Service {
 	if universePath == "" {
 		universePath = "configs/persona_daily_picks_universe.yaml"
 	}
-	return theme.NewService(regPath, universePath, provider)
+	return theme.NewService(regPath, universePath, provider, redisClient)
+}
+
+func initDecisionService(portfolioSvc *portfolio.Service, themeSvc *theme.Service, redisClient *redis.Client) *decision.Service {
+	riskPath := os.Getenv("PORTFOLIO_RISK_RULES_CONFIG")
+	if riskPath == "" {
+		riskPath = "configs/portfolio_risk_rules.yaml"
+	}
+	historyRoot := os.Getenv("DECISION_HISTORY_DIR")
+	regPath := os.Getenv("THEME_REGISTRY_CONFIG")
+	if regPath == "" {
+		regPath = "configs/theme_registry.yaml"
+	}
+	universePath := os.Getenv("PERSONA_UNIVERSE_CONFIG")
+	if universePath == "" {
+		universePath = "configs/persona_daily_picks_universe.yaml"
+	}
+	svc, err := decision.NewService(portfolioSvc, themeSvc, riskPath, historyRoot, regPath, universePath, redisClient)
+	if err != nil {
+		log.Printf("Warning: decision service init failed: %v", err)
+		return nil
+	}
+	return svc
 }

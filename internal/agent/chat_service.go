@@ -170,11 +170,11 @@ func (s *ChatService) chat(ctx context.Context, req *ChatRequest, onChunk func(s
 	if resp, err := s.route(cc); err != nil {
 		return resp, err
 	}
-	if resp := s.checkExactCache(cc); resp != nil {
-		return resp, nil
-	}
 	if resp, err := s.persistUserMessage(cc); err != nil {
 		return resp, err
+	}
+	if resp := s.checkExactCache(cc); resp != nil {
+		return resp, nil
 	}
 	if resp, err := s.loadMemory(cc); err != nil {
 		return resp, err
@@ -366,20 +366,6 @@ func (s *ChatService) execute(cc *chatContext) (*ChatResponse, error) {
 		"output_tokens", cc.executeResp.OutputTokens,
 	)
 
-	if s.exactCache != nil && !cc.executeResp.AwaitingHuman {
-		cacheKey := buildExactCacheKey(cc.req.Message, string(cc.routeDecision.SelectedMode),
-			cc.req.StockCode, cc.req.DocType, cc.req.TimeRange)
-		go func() {
-			if err := s.exactCache.Set(context.Background(), cacheKey, cc.executeResp.Content); err != nil {
-				observability.L().WarnCtx(context.Background(), "Exact cache set failed", "error", err)
-			} else {
-				observability.L().InfoCtx(context.Background(), "Exact cache entry added",
-					"cache_key", truncateString(cacheKey, 50),
-				)
-			}
-		}()
-	}
-
 	return nil, nil
 }
 
@@ -399,9 +385,6 @@ func (s *ChatService) saveAssistantMessage(cc *chatContext) error {
 		}
 	}
 	cc.assistantMsg = repository.NewMessage(cc.convID, cc.req.UserID, "assistant", content, metadata)
-	if cc.executeResp.MessageID != "" {
-		cc.assistantMsg.ID = cc.executeResp.MessageID
-	}
 	cc.assistantMsg.RouteMode = string(cc.routeDecision.SelectedMode)
 	if cc.routeDecision.SelectedMode == router.ModeAgent && cc.executeReq.CoordinatorType != "" {
 		cc.assistantMsg.CoordinatorType = cc.executeReq.CoordinatorType
@@ -418,6 +401,7 @@ func (s *ChatService) saveAssistantMessage(cc *chatContext) error {
 	)
 
 	cc.executeResp.MessageID = cc.assistantMsg.ID
+	s.maybeCacheExactResponse(cc)
 	return nil
 }
 
@@ -554,7 +538,7 @@ func (s *ChatService) checkExactCache(cc *chatContext) *ChatResponse {
 		return nil
 	}
 
-	cacheKey := buildExactCacheKey(cc.req.Message, string(cc.routeDecision.SelectedMode), cc.req.StockCode, cc.req.DocType, cc.req.TimeRange)
+	cacheKey := s.exactCacheKey(cc.req)
 	cacheResult, err := s.exactCache.Get(cc.ctx, cacheKey)
 	if err != nil {
 		observability.L().WarnCtx(cc.ctx, "Exact cache query failed", "error", err)
@@ -563,7 +547,20 @@ func (s *ChatService) checkExactCache(cc *chatContext) *ChatResponse {
 
 	if !cacheResult.Hit {
 		metrics.RecordCacheMiss("exact")
-		observability.L().InfoCtx(cc.ctx, "Exact cache miss, proceeding with execution")
+		observability.L().InfoCtx(cc.ctx, "Exact cache miss, proceeding with execution",
+			"cache_key", truncateString(cacheKey, 50),
+		)
+		return nil
+	}
+
+	if !isCacheableChatResponse(cacheResult.Response) {
+		metrics.RecordCacheMiss("exact")
+		observability.L().WarnCtx(cc.ctx, "Exact cache poison entry ignored, deleting",
+			"cache_key", truncateString(cacheKey, 50),
+		)
+		go func(key string) {
+			_ = s.exactCache.Delete(context.Background(), key)
+		}(cacheKey)
 		return nil
 	}
 
@@ -571,6 +568,7 @@ func (s *ChatService) checkExactCache(cc *chatContext) *ChatResponse {
 	observability.L().InfoCtx(cc.ctx, "Exact cache hit, returning cached response",
 		"message_id", cc.routeDecision.MessageID,
 		"access_count", cacheResult.AccessCount,
+		"cache_key", truncateString(cacheKey, 50),
 	)
 
 	if cc.onChunk != nil {
@@ -579,10 +577,16 @@ func (s *ChatService) checkExactCache(cc *chatContext) *ChatResponse {
 		}
 	}
 
+	assistantMsg := repository.NewMessage(cc.convID, cc.req.UserID, "assistant", cacheResult.Response, nil)
+	assistantMsg.RouteMode = string(cc.routeDecision.SelectedMode)
+	if err := s.conversation.SaveMessage(cc.ctx, assistantMsg); err != nil {
+		observability.L().WarnCtx(cc.ctx, "Exact cache assistant save failed", "error", err)
+	}
+
 	latency := int(time.Since(cc.startTime).Milliseconds())
 	return &ChatResponse{
 		ConversationID: cc.convID,
-		MessageID:      cc.routeDecision.MessageID,
+		MessageID:      assistantMsg.ID,
 		Content:        cacheResult.Response,
 		Mode:           string(cc.routeDecision.SelectedMode),
 		InputTokens:    0,
@@ -820,13 +824,9 @@ func (s *ChatService) citationsToInterface(citations []Citation) []interface{} {
 	return result
 }
 
-// buildExactCacheKey 构建精确缓存的复合键
-// 键 = message + mode + stockCode + docType + timeRange
-func buildExactCacheKey(message, mode, stockCode, docType, timeRange string) string {
-	// 使用简单的拼接方式构建复合键
-	// 因为后续会用 MD5 哈希，所以不需要手动处理分隔符
-	key := message + "|" + mode + "|" + stockCode + "|" + docType + "|" + timeRange
-	return key
+// buildExactCacheKey 构建精确缓存的复合键（不含 route mode，相同问题共享缓存）。
+func buildExactCacheKey(message, stockCode, docType, timeRange string) string {
+	return message + "|" + stockCode + "|" + docType + "|" + timeRange
 }
 
 // truncateString 截断字符串用于日志

@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Stock RAG - 投资工作台</title>
     <link rel="stylesheet" href="css/app.css?v=5">
-    <link rel="stylesheet" href="css/home.css?v=1">
+    <link rel="stylesheet" href="css/home.css?v=2">
 </head>
 <body>
     <div class="home-page">
@@ -34,6 +34,12 @@
                     <p>基于 RAG 的股票问答，支持流式输出与多轮会话</p>
                     <span class="module-tag">核心功能</span>
                 </a>
+                <a href="brief.html" class="module-card">
+                    <div class="module-icon">📋</div>
+                    <h3>每日决策简报</h3>
+                    <p>持仓 × 主题 × 风险规则，一页看清今日该关注什么</p>
+                    <span class="module-tag">决策辅助</span>
+                </a>
                 <a href="themes.html" class="module-card">
                     <div class="module-icon">🔥</div>
                     <h3>主题快照</h3>
@@ -59,6 +65,31 @@
                     <span class="module-tag">每日更新</span>
                 </a>
             </div>
+
+            <section class="home-section">
+                <h2 class="home-section-title">运维监控</h2>
+                <p class="home-section-desc">Grafana、Prometheus、Jaeger 本地开发环境（新标签页打开）</p>
+                <div class="module-grid monitor-grid">
+                    <a href="http://localhost:3000" target="_blank" rel="noopener noreferrer" class="module-card monitor-card">
+                        <div class="module-icon">📈</div>
+                        <h3>Grafana</h3>
+                        <p>监控仪表盘与告警</p>
+                        <span class="module-tag">localhost:3000</span>
+                    </a>
+                    <a href="http://localhost:9091" target="_blank" rel="noopener noreferrer" class="module-card monitor-card">
+                        <div class="module-icon">📉</div>
+                        <h3>Prometheus</h3>
+                        <p>指标采集与查询</p>
+                        <span class="module-tag">localhost:9091</span>
+                    </a>
+                    <a href="http://localhost:16686" target="_blank" rel="noopener noreferrer" class="module-card monitor-card">
+                        <div class="module-icon">🔍</div>
+                        <h3>Jaeger</h3>
+                        <p>分布式链路追踪</p>
+                        <span class="module-tag">localhost:16686</span>
+                    </a>
+                </div>
+            </section>
 
             <p class="home-footer">风险提示：数据仅供研究参考，不构成投资建议</p>
         </main>

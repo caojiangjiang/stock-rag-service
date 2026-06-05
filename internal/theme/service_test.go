@@ -6,7 +6,7 @@ import (
 )
 
 func TestService_Snapshot_AITheme(t *testing.T) {
-	svc := NewService("../../configs/theme_registry.yaml", "../../configs/persona_daily_picks_universe.yaml", nil)
+	svc := NewService("../../configs/theme_registry.yaml", "../../configs/persona_daily_picks_universe.yaml", nil, nil)
 	resp, err := svc.Snapshot(context.Background(), "ai", "")
 	if err != nil {
 		t.Fatalf("snapshot: %v", err)
@@ -39,7 +39,7 @@ func TestService_Snapshot_AITheme(t *testing.T) {
 }
 
 func TestService_Snapshot_EmbodiedAI(t *testing.T) {
-	svc := NewService("../../configs/theme_registry.yaml", "../../configs/persona_daily_picks_universe.yaml", nil)
+	svc := NewService("../../configs/theme_registry.yaml", "../../configs/persona_daily_picks_universe.yaml", nil, nil)
 	resp, err := svc.Snapshot(context.Background(), "embodied_ai", "cn")
 	if err != nil {
 		t.Fatalf("snapshot: %v", err)

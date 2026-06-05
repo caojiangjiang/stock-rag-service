@@ -13,6 +13,7 @@ import (
 
 	"stock_rag/internal/agent"
 	"stock_rag/internal/auth"
+	"stock_rag/internal/decision"
 	einoagent "stock_rag/internal/eino/agent"
 	"stock_rag/internal/metrics"
 	personaservice "stock_rag/internal/persona/service"
@@ -31,7 +32,7 @@ type Route struct {
 }
 
 // NewRouter 注册当前已经接通的 HTTP 路由。
-func NewRouter(querySvc QueryService, taskAgentService *service.TaskAgentService, authService auth.AuthService, jwtSecret string, chatService *agent.ChatService, conversationStore repository.UnifiedConversationStore, postgresDB Pinger, redisClient *redis.Client, coordinatorFactory *einoagent.CoordinatorFactory, portfolioSvc *portfolio.Service, themeSvc *theme.Service) *http.ServeMux {
+func NewRouter(querySvc QueryService, taskAgentService *service.TaskAgentService, authService auth.AuthService, jwtSecret string, chatService *agent.ChatService, conversationStore repository.UnifiedConversationStore, postgresDB Pinger, redisClient *redis.Client, coordinatorFactory *einoagent.CoordinatorFactory, portfolioSvc *portfolio.Service, themeSvc *theme.Service, decisionSvc *decision.Service) *http.ServeMux {
 	mux := http.NewServeMux()
 
 	// 健康检查端点
@@ -101,7 +102,7 @@ func NewRouter(querySvc QueryService, taskAgentService *service.TaskAgentService
 
 	// 个人持仓
 	if portfolioSvc != nil {
-		portfolioHandler := NewPortfolioHandler(portfolioSvc)
+		portfolioHandler := NewPortfolioHandlerWithDecision(portfolioSvc, decisionSvc)
 		mux.HandleFunc("/api/portfolio/positions", requireAuth(portfolioHandler.HandlePositions))
 		mux.HandleFunc("/api/portfolio/summary", requireAuth(portfolioHandler.Summary))
 		mux.HandleFunc("/api/portfolio/import/fund", requireAuth(portfolioHandler.ImportFund))
@@ -115,6 +116,13 @@ func NewRouter(querySvc QueryService, taskAgentService *service.TaskAgentService
 	if themeSvc != nil {
 		themeHandler := NewThemeHandler(themeSvc)
 		mux.HandleFunc("/api/themes/snapshot", requireAuth(themeHandler.Snapshot))
+	}
+
+	// 决策辅助
+	if decisionSvc != nil {
+		decisionHandler := NewDecisionHandler(decisionSvc)
+		mux.HandleFunc("/api/decision/daily-brief", requireAuth(decisionHandler.DailyBrief))
+		mux.HandleFunc("/api/decision/history/export", requireAuth(decisionHandler.ExportHistory))
 	}
 
 	// Investment Persona 模块路由

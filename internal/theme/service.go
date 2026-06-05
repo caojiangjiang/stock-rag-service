@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
+	"stock_rag/internal/cache"
 	"stock_rag/internal/market"
 	personamodel "stock_rag/internal/persona/model"
+
+	"github.com/redis/go-redis/v9"
 )
 
 // Service 主题快照服务。
@@ -20,18 +22,18 @@ type Service struct {
 	boards       *BoardLoader
 	loadRegistry func(string) (*Registry, error)
 	loadUniverse func(string) (*personamodel.UniverseConfig, error)
-	mockFallback *market.DefaultProvider
-	cacheMu      sync.RWMutex
-	cache        map[string]snapshotCacheEntry
-	cacheTTL     time.Duration
+	mockFallback     *market.DefaultProvider
+	snapshotStore      *cache.TimedJSONStore
+	symbolIndexStore   *cache.TimedJSONStore
+	cacheTTL           time.Duration
 }
 
 // NewService 创建主题快照服务。
-func NewService(registryPath, universePath string, provider market.Provider) *Service {
+func NewService(registryPath, universePath string, provider market.Provider, redisClient *redis.Client) *Service {
 	if provider == nil {
 		provider = market.NewDefaultProvider()
 	}
-	return &Service{
+	s := &Service{
 		registryPath: registryPath,
 		universePath: universePath,
 		market:       provider,
@@ -39,28 +41,35 @@ func NewService(registryPath, universePath string, provider market.Provider) *Se
 		loadRegistry: LoadRegistry,
 		loadUniverse: LoadUniverseYAML,
 		mockFallback: market.NewDefaultProvider(),
-		cache:        make(map[string]snapshotCacheEntry),
 		cacheTTL:     parseSnapshotCacheTTL(),
 	}
+	if redisClient != nil {
+		s.snapshotStore = cache.NewTimedJSONStore(redisClient, "stock_rag:theme:snapshot")
+		s.symbolIndexStore = cache.NewTimedJSONStore(redisClient, "stock_rag:theme:symbol_index")
+	}
+	return s
 }
 
 // Snapshot 返回主题快照列表（优先读缓存，避免频繁请求东财）。
 func (s *Service) Snapshot(ctx context.Context, themeID, marketFilter string) (*SnapshotResponse, error) {
-	var entry *snapshotCacheEntry
+	var resp *SnapshotResponse
+	var cachedAt time.Time
 	var fromCache bool
-	if e, ok := s.cacheGet(); ok {
-		entry = e
+	if cached, at, ok := s.cacheGet(ctx); ok {
+		resp = cached
+		cachedAt = at
 		fromCache = true
 	} else {
-		resp, err := s.buildSnapshotFresh(ctx)
+		fresh, err := s.buildSnapshotFresh(ctx)
 		if err != nil {
 			return nil, err
 		}
-		s.cacheSet(resp)
-		entry = &snapshotCacheEntry{resp: resp, at: time.Now()}
+		s.cacheSet(ctx, fresh)
+		resp = fresh
+		cachedAt = time.Now()
 	}
 
-	out := filterSnapshot(entry.resp, themeID, marketFilter, fromCache, entry.at)
+	out := filterSnapshot(resp, themeID, marketFilter, fromCache, cachedAt)
 	if themeID != "" && len(out.Themes) == 0 {
 		return nil, fmt.Errorf("theme not found: %s", themeID)
 	}
@@ -69,12 +78,12 @@ func (s *Service) Snapshot(ctx context.Context, themeID, marketFilter string) (*
 
 // RefreshSnapshot 强制刷新并更新缓存。
 func (s *Service) RefreshSnapshot(ctx context.Context, themeID, marketFilter string) (*SnapshotResponse, error) {
-	s.invalidateCache()
+	s.invalidateCache(ctx)
 	resp, err := s.buildSnapshotFresh(ctx)
 	if err != nil {
 		return nil, err
 	}
-	s.cacheSet(resp)
+	s.cacheSet(ctx, resp)
 	out := filterSnapshot(resp, themeID, marketFilter, false, time.Now())
 	if themeID != "" && len(out.Themes) == 0 {
 		return nil, fmt.Errorf("theme not found: %s", themeID)

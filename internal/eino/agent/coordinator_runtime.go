@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/cloudwego/eino/adk"
@@ -204,6 +205,15 @@ func (rt *CoordinatorRuntime) ProcessADKIterator(
 				continue
 			}
 			content := msg.Content
+			if len(msg.ToolCalls) > 0 {
+				content = ""
+			}
+			if strings.Contains(content, "<|FunctionCallBegin|>") {
+				continue
+			}
+			if content == "" && len(msg.ToolCalls) == 0 {
+				continue
+			}
 			result.Content += content
 
 			if taskState.OnChunk != nil && content != "" {

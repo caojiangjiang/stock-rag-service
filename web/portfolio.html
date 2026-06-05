@@ -19,7 +19,10 @@
                     <h1>我的持仓</h1>
                     <p>管理股票与基金持仓，查看成本、市值与浮动盈亏</p>
                 </div>
-                <a href="index.html" class="back-link">← 返回首页</a>
+                <div>
+                    <a href="index.html" class="back-link">← 返回首页</a>
+                    <a href="brief.html" class="back-link" style="margin-left:12px;">📋 决策简报</a>
+                </div>
             </header>
 
             <section class="portfolio-summary" id="summary-cards">
@@ -124,9 +127,13 @@
                             <strong>累计净值</strong>：含历史分红后的参考价，主要用于对比基金长期业绩，<em>录入持仓请用单位净值</em>。
                         </p>
                     </div>
-                    <div class="form-group">
-                        <label for="thesis">投资逻辑 / 备注</label>
-                        <textarea id="thesis" name="thesis" placeholder="为什么持有？"></textarea>
+                    <div class="form-group" id="thesis-group">
+                        <label for="thesis">买入逻辑 *</label>
+                        <textarea id="thesis" name="thesis" placeholder="为什么持有？核心假设是什么？"></textarea>
+                    </div>
+                    <div class="form-group" id="falsification-group">
+                        <label for="falsification">证伪条件</label>
+                        <textarea id="falsification" name="falsification" placeholder="什么情况下你会卖出？例如：业绩连续两季度不及预期"></textarea>
                     </div>
                 </div>
                 <div class="portfolio-modal-footer">
@@ -445,7 +452,8 @@
                         <td class="num">${formatMoney(p.market_value)}</td>
                         <td class="num ${pnlClass(p.unrealized_pnl)}">${formatSignedMoney(p.unrealized_pnl)}</td>
                         <td class="num ${pnlClass(p.unrealized_pnl_pct)}">${p.unrealized_pnl_pct ? formatSignedPercent(p.unrealized_pnl_pct) : '—'}</td>
-                        <td class="thesis-cell" title="${escapeAttr(p.thesis || '')}">${escapeHtml(p.thesis || '—')}</td>
+                        <td><span class="source-tag ${quoteSourceClass(p.quote_source)}">${quoteSourceLabel(p.quote_source)}</span></td>
+                        <td class="thesis-cell" title="${escapeAttr((p.thesis || '') + (p.falsification ? '\n证伪: ' + p.falsification : ''))}">${escapeHtml(p.thesis || '—')}</td>
                         <td>
                             <div class="row-actions">
                                 <button type="button" class="btn-icon" data-action="edit">编辑</button>
@@ -473,7 +481,8 @@
                             <th>市值</th>
                             <th>浮盈</th>
                             <th>浮盈%</th>
-                            <th>备注</th>
+                            <th>数据源</th>
+                            <th>买入逻辑</th>
                             <th>操作</th>
                         </tr>
                     </thead>
@@ -503,6 +512,8 @@
             document.getElementById('quantity-label').textContent = isFund ? '持有份额 *' : '持仓数量 *';
             document.getElementById('cost-label').textContent = isFund ? '买入单位净值 *' : '成本价 *';
             document.getElementById('fund-hint').style.display = isFund ? 'block' : 'none';
+            document.getElementById('falsification-group').style.display = isFund ? 'none' : 'block';
+            document.getElementById('thesis-group').querySelector('label').textContent = isFund ? '备注' : '买入逻辑 *';
             document.getElementById('stock-code').placeholder = isFund ? '如 005827 / 110011' : '如 600519 / NVDA';
             document.getElementById('quantity').placeholder = isFund ? '10000' : '100';
             document.getElementById('cost-price').placeholder = isFund ? '2.05' : '1600';
@@ -533,6 +544,7 @@
                 document.getElementById('quantity').value = position.quantity ?? '';
                 document.getElementById('cost-price').value = position.cost_price ?? '';
                 document.getElementById('thesis').value = position.thesis || '';
+                document.getElementById('falsification').value = position.falsification || '';
             }
 
             document.getElementById('position-modal').classList.add('show');
@@ -558,6 +570,7 @@
                 quantity: parseFloat(document.getElementById('quantity').value),
                 cost_price: parseFloat(document.getElementById('cost-price').value),
                 thesis: document.getElementById('thesis').value.trim(),
+                falsification: document.getElementById('falsification').value.trim(),
             };
             const currency = document.getElementById('currency').value;
             if (currency) payload.currency = currency;
@@ -607,6 +620,15 @@
             if (n == null || Number.isNaN(n)) return '—';
             const prefix = n > 0 ? '+' : '';
             return prefix + Number(n).toFixed(2) + '%';
+        }
+
+        function quoteSourceClass(s) {
+            if (s === 'eastmoney') return 'live';
+            if (s === 'mock') return 'mock';
+            return 'missing';
+        }
+        function quoteSourceLabel(s) {
+            return ({ eastmoney: 'live', mock: 'mock', missing: '缺失' }[s] || s || '—');
         }
 
         function pnlClass(n) {

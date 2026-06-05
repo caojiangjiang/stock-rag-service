@@ -1,0 +1,18 @@
+# 组合风险规则（决策辅助，非交易强制执行）
+rules:
+  # 单票市值占组合上限（%）
+  max_single_position_weight_pct: 25
+  # 同一主题暴露上限（%）
+  max_theme_weight_pct: 40
+  # 股票持仓是否要求填写买入逻辑
+  require_thesis_for_stock: true
+  min_thesis_length: 8
+  # 是否要求填写证伪条件（P1 thesis 扩展）
+  require_falsification_for_stock: false
+  min_falsification_length: 6
+  # 触发关注/警告的主题状态
+  warn_theme_states:
+    - cooling
+    - overheated
+  # 单票浮亏超过该比例时警告（%）
+  warn_unrealized_loss_pct: 15

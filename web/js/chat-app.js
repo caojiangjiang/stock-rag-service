@@ -5,6 +5,7 @@
   let currentConversationID = null;
   let conversations = [];
   let isSending = false;
+  let pendingRouteMode = null;
 
   const chatContainer = () => document.getElementById('chat-container');
   const messageInput = () => document.getElementById('message-input');
@@ -54,12 +55,12 @@
     }
   }
 
-  async function loadConversations() {
+  async function loadConversations(autoSelectFirst = true) {
     const res = await Auth.authFetch(`/api/conversations?user_id=${encodeURIComponent(getCurrentUserID())}`);
     if (!res.ok) return;
     conversations = await res.json();
     renderConversations();
-    if (conversations.length > 0 && !currentConversationID) {
+    if (autoSelectFirst && conversations.length > 0 && !currentConversationID) {
       await switchConversation(conversations[0].id);
     }
   }
@@ -105,20 +106,27 @@
     });
   }
 
-  async function createNewConversation() {
-    currentConversationTitle().textContent = '未命名对话';
-    showWelcomeMessage('你好！我是 Stock RAG，可以帮你查询和分析股票信息。');
+  async function createNewConversation(title, options = {}) {
+    const { skipWelcome = false } = options;
+    const convTitle = (title && String(title).trim()) || '未命名对话';
+    currentConversationTitle().textContent = convTitle;
+    if (skipWelcome) {
+      if (emptyState()) emptyState().style.display = 'none';
+      chatContainer().innerHTML = '';
+    } else {
+      showWelcomeMessage('你好！我是 Stock RAG，可以帮你查询和分析股票信息。');
+    }
 
     try {
       const res = await Auth.authFetch('/api/conversations/create', {
         method: 'POST',
-        body: JSON.stringify({ user_id: getCurrentUserID(), title: '未命名对话' }),
+        body: JSON.stringify({ user_id: getCurrentUserID(), title: convTitle }),
       });
       if (res.ok) currentConversationID = (await res.json()).id;
     } catch (e) {
       console.error(e);
     }
-    await loadConversations();
+    await loadConversations(false);
     messageInput()?.focus();
   }
 
@@ -304,8 +312,10 @@
           message,
           conversation_id: currentConversationID || '',
           user_id: getCurrentUserID(),
+          ...(pendingRouteMode ? { mode: pendingRouteMode } : {}),
         }),
       });
+      pendingRouteMode = null;
 
       if (!res.ok) {
         removeLoadingMessage();
@@ -399,7 +409,10 @@
     input.style.height = 'auto';
     
     if (isFirstMessage) {
-      await updateConversationTitle(text);
+      const existingTitle = currentConversationTitle()?.textContent?.trim() || '';
+      if (!existingTitle || existingTitle === '新对话' || existingTitle === '未命名对话') {
+        await updateConversationTitle(text);
+      }
     }
     
     await sendRequestStream(text);
@@ -445,29 +458,43 @@
     });
   }
 
-  function toggleMonitorMenu() {
-    const menu = document.getElementById('monitor-menu');
-    if (menu) {
-      menu.classList.toggle('show');
-    }
-  }
-
-  function closeMonitorMenu(event) {
-    const menu = document.getElementById('monitor-menu');
-    const monitorBtn = document.getElementById('monitor-btn');
-    if (menu && !monitorBtn?.contains(event.target) && !menu.contains(event.target)) {
-      menu.classList.remove('show');
-    }
-  }
-
   async function init() {
     renderUserHeader();
     bindComposer();
     document.getElementById('new-chat-btn')?.addEventListener('click', createNewConversation);
-    document.getElementById('monitor-btn')?.addEventListener('click', toggleMonitorMenu);
-    document.addEventListener('click', closeMonitorMenu);
     document.getElementById('logout-btn')?.addEventListener('click', () => Auth.logout());
-    await loadConversations();
+
+    const prefill = consumePrefillPrompt();
+    const autoSend = sessionStorage.getItem('chat_prefill_autosend') === '1';
+    sessionStorage.removeItem('chat_prefill_autosend');
+    pendingRouteMode = sessionStorage.getItem('chat_prefill_mode');
+    sessionStorage.removeItem('chat_prefill_mode');
+    if (prefill) {
+      const title = sessionStorage.getItem('chat_prefill_title');
+      sessionStorage.removeItem('chat_prefill_title');
+      await createNewConversation(title, { skipWelcome: autoSend });
+      applyPrefillToInput(prefill);
+      if (autoSend) {
+        await sendMessage();
+      }
+    } else {
+      await loadConversations(true);
+    }
+  }
+
+  function consumePrefillPrompt() {
+    const text = sessionStorage.getItem('chat_prefill_prompt');
+    if (!text) return null;
+    sessionStorage.removeItem('chat_prefill_prompt');
+    return text;
+  }
+
+  function applyPrefillToInput(text) {
+    const input = messageInput();
+    if (!input) return;
+    input.value = text;
+    input.dispatchEvent(new Event('input'));
+    input.focus();
   }
 
   global.ChatApp = { init };

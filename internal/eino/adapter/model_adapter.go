@@ -10,8 +10,8 @@ import (
 	"stock_rag/internal/llm"
 )
 
-// EinoModelAdapter 是 Eino ToolCallingChatModel 的适配器
-// 它将 Eino ADK 的模型调用转换为通过 llm.GetLLMClient() 统一网关调用
+// EinoModelAdapter 是 Eino ToolCallingChatModel 的适配器。
+// Agent 模式优先走 Ark 原生 ToolCalling（支持 transfer_to_agent），否则回退 LLMClient。
 type EinoModelAdapter struct {
 	tools []*schema.ToolInfo
 }
@@ -23,14 +23,48 @@ func NewEinoModelAdapter() *EinoModelAdapter {
 	}
 }
 
+func (a *EinoModelAdapter) resolveArkModel() (model.ToolCallingChatModel, error) {
+	base := arkToolCallingModel()
+	if base == nil {
+		return nil, nil
+	}
+	if len(a.tools) == 0 {
+		return base, nil
+	}
+	return base.WithTools(a.tools)
+}
+
+func arkToolCallingModel() model.ToolCallingChatModel {
+	client := llm.GetLLMClient()
+	if client == nil {
+		return nil
+	}
+	cm := client.GetChatModel()
+	if cm == nil {
+		return nil
+	}
+	return cm.ArkToolCallingModel()
+}
+
 // Generate 生成响应
 func (a *EinoModelAdapter) Generate(ctx context.Context, input []*schema.Message, opts ...model.Option) (*schema.Message, error) {
+	arkModel, err := a.resolveArkModel()
+	if err != nil {
+		return nil, err
+	}
+	if arkModel != nil {
+		out, err := arkModel.Generate(ctx, input, opts...)
+		if err != nil {
+			return nil, err
+		}
+		return normalizeModelMessage(out), nil
+	}
+
 	llmClient := llm.GetLLMClient()
 	if llmClient == nil {
 		return nil, nil
 	}
 
-	// 构建 LLMRequest
 	llmReq := &concurrency.LLMRequest{
 		Question: extractQuestion(input),
 		Messages: input,
@@ -39,29 +73,34 @@ func (a *EinoModelAdapter) Generate(ctx context.Context, input []*schema.Message
 		Priority: 1,
 	}
 
-	// 调用 LLMClient
 	result, err := llmClient.Generate(ctx, llmReq)
 	if err != nil {
 		return nil, err
 	}
 
-	return &schema.Message{
+	return normalizeModelMessage(&schema.Message{
 		Role:    schema.Assistant,
 		Content: result,
-	}, nil
+	}), nil
 }
 
 // Stream 流式生成响应
 func (a *EinoModelAdapter) Stream(ctx context.Context, input []*schema.Message, opts ...model.Option) (*schema.StreamReader[*schema.Message], error) {
+	arkModel, err := a.resolveArkModel()
+	if err != nil {
+		return nil, err
+	}
+	if arkModel != nil {
+		return arkModel.Stream(ctx, input, opts...)
+	}
+
 	llmClient := llm.GetLLMClient()
 	if llmClient == nil {
 		return nil, nil
 	}
 
-	// 使用 schema.Pipe 创建流式读写器
 	sr, sw := schema.Pipe[*schema.Message](16)
 
-	// 异步调用流式生成
 	go func() {
 		defer sw.Close()
 
@@ -72,19 +111,36 @@ func (a *EinoModelAdapter) Stream(ctx context.Context, input []*schema.Message, 
 			Stream:   true,
 			Priority: 1,
 			OnChunk: func(chunk string) error {
-				sw.Send(&schema.Message{
+				msg := normalizeModelMessage(&schema.Message{
 					Role:    schema.Assistant,
 					Content: chunk,
-				}, nil)
+				})
+				sw.Send(msg, nil)
 				return nil
 			},
 		}
 
-		// 调用流式生成（忽略最终结果，通过 OnChunk 回调获取）
-		llmClient.Generate(ctx, llmReq)
+		result, genErr := llmClient.Generate(ctx, llmReq)
+		if genErr != nil {
+			sw.Send(nil, genErr)
+			return
+		}
+		if stringsOnlyToolCall(result) {
+			msg := normalizeModelMessage(&schema.Message{
+				Role:    schema.Assistant,
+				Content: result,
+			})
+			if len(msg.ToolCalls) > 0 {
+				sw.Send(msg, nil)
+			}
+		}
 	}()
 
 	return sr, nil
+}
+
+func stringsOnlyToolCall(result string) bool {
+	return result != "" && functionCallBlockRe.MatchString(result)
 }
 
 // WithTools 返回绑定工具的新实例

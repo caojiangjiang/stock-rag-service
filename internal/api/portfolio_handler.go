@@ -10,11 +10,21 @@ import (
 
 // PortfolioHandler 个人持仓 API。
 type PortfolioHandler struct {
-	svc *portfolio.Service
+	svc      *portfolio.Service
+	decision DecisionCacheInvalidator
+}
+
+// DecisionCacheInvalidator 持仓变更时使决策简报缓存失效。
+type DecisionCacheInvalidator interface {
+	InvalidateUserCache(userID string)
 }
 
 func NewPortfolioHandler(svc *portfolio.Service) *PortfolioHandler {
 	return &PortfolioHandler{svc: svc}
+}
+
+func NewPortfolioHandlerWithDecision(svc *portfolio.Service, decision DecisionCacheInvalidator) *PortfolioHandler {
+	return &PortfolioHandler{svc: svc, decision: decision}
 }
 
 func (h *PortfolioHandler) HandlePositions(w http.ResponseWriter, r *http.Request) {
@@ -47,6 +57,7 @@ func (h *PortfolioHandler) HandlePositions(w http.ResponseWriter, r *http.Reques
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
+		h.invalidateDecision(userID)
 		writeJSON(w, http.StatusOK, pos)
 	case http.MethodDelete:
 		id := strings.TrimSpace(r.URL.Query().Get("id"))
@@ -58,6 +69,7 @@ func (h *PortfolioHandler) HandlePositions(w http.ResponseWriter, r *http.Reques
 			http.Error(w, err.Error(), http.StatusNotFound)
 			return
 		}
+		h.invalidateDecision(userID)
 		writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -123,8 +135,15 @@ func (h *PortfolioHandler) ImportFund(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	h.invalidateDecision(userID)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"position": pos,
 		"preview":  preview,
 	})
+}
+
+func (h *PortfolioHandler) invalidateDecision(userID string) {
+	if h.decision != nil && userID != "" {
+		h.decision.InvalidateUserCache(userID)
+	}
 }

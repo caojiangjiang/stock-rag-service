@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>每日决策简报 - Stock RAG</title>
+    <link rel="stylesheet" href="css/app.css?v=5">
+    <link rel="stylesheet" href="css/brief.css?v=1">
+</head>
+<body>
+    <div class="brief-page">
+        <div class="risk-banner">
+            <p>⚠️ 简报由规则引擎与行情数据自动生成，仅供研究参考，不构成投资建议。</p>
+        </div>
+        <div class="brief-container">
+            <header class="brief-header">
+                <div>
+                    <h1>每日决策简报</h1>
+                    <p>持仓 × 主题 × 风险规则 · 一页看清今日该关注什么</p>
+                </div>
+                <div class="brief-toolbar">
+                    <a href="index.html" class="btn btn-ghost">← 首页</a>
+                    <a href="portfolio.html" class="btn btn-secondary">管理持仓</a>
+                    <button type="button" class="btn btn-secondary" id="export-btn">导出跟踪 CSV</button>
+                    <button type="button" class="btn btn-primary" id="refresh-btn">刷新</button>
+                </div>
+            </header>
+            <div id="content"><div class="brief-empty">加载中…</div></div>
+        </div>
+    </div>
+    <script src="js/auth.js"></script>
+    <script src="js/decision-api.js?v=3"></script>
+    <script>
+        const STATE_LABELS = { overheated: '过热', hot: '强势', emerging: '萌芽', cooling: '退潮', neutral: '中性', unknown: '未知' };
+        /** @type {Array<{id:string,title:string,text:string}>} */
+        let promptTemplates = [];
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            const ok = await Auth.ensureAuthenticated({ redirect: true });
+            if (!ok) return;
+            document.getElementById('refresh-btn').addEventListener('click', () => loadBrief(true));
+            document.getElementById('export-btn').addEventListener('click', exportHistory);
+            await loadBrief(false);
+        });
+
+        async function loadBrief(forceRefresh) {
+            const el = document.getElementById('content');
+            const refreshBtn = document.getElementById('refresh-btn');
+            el.innerHTML = '<div class="brief-empty">加载中…</div>';
+            refreshBtn.disabled = true;
+            try {
+                const data = await DecisionAPI.getDailyBrief({ refresh: forceRefresh || undefined });
+                renderBrief(data);
+            } catch (err) {
+                el.innerHTML = `<div class="brief-empty">加载失败：${escapeHtml(err.message)}</div>`;
+            } finally {
+                refreshBtn.disabled = false;
+            }
+        }
+
+        function renderBrief(data) {
+            const p = data.portfolio?.summary || {};
+            const trust = data.data_trust || {};
+            const positions = p.positions || [];
+
+            let trustClass = 'ok';
+            let trustText = `行情 live ${trust.quote_live || 0} · mock ${trust.quote_mock || 0} · 缺失 ${trust.quote_missing || 0}`;
+            if (trust.theme_cached) trustText += ` · 主题缓存 ${trust.theme_cache_age_sec || 0}s`;
+            if (trust.quote_mock > 0 || trust.quote_missing > 0) trustClass = '';
+            if (data.cached && data.cache_age_sec != null) {
+                trustText += ` · 简报缓存 ${data.cache_age_sec}s`;
+            }
+            if (trust.note) trustText += ` — ${trust.note}`;
+
+            const watchHtml = (data.watch_items || []).map(w => `
+                <li class="watch-item ${w.severity}">
+                    <div class="title">${escapeHtml(w.title)}</div>
+                    <div class="detail">${escapeHtml(w.detail)}</div>
+                </li>`).join('');
+
+            const riskHtml = (data.risk?.violations || []).length
+                ? data.risk.violations.map(v => `<li class="risk-item"><div class="msg">${escapeHtml(v.message)}</div></li>`).join('')
+                : '<li class="risk-item"><div class="msg">✅ 未触发风险规则</div></li>';
+
+            const expHtml = (data.theme_exposures || []).length
+                ? data.theme_exposures.map(e => `
+                    <li class="exposure-item">
+                        <div class="head">
+                            <strong>${escapeHtml(e.theme_name)}</strong>
+                            <span><span class="state-pill">${STATE_LABELS[e.state] || e.state}</span> · 暴露 ${e.weight_pct}%</span>
+                        </div>
+                        <div class="meta">成分：${escapeHtml((e.symbols || []).join(', '))} · 主题均涨跌 ${formatPct(e.avg_change_pct)}</div>
+                        ${e.alert ? `<div class="meta" style="color:#fcd34d;margin-top:4px;">${escapeHtml(e.alert)}</div>` : ''}
+                    </li>`).join('')
+                : '<li class="exposure-item"><div class="meta">暂无股票持仓或未匹配到主题</div></li>';
+
+            promptTemplates = data.prompt_templates || [];
+            const promptHtml = promptTemplates.map((t, idx) => `
+                <li class="prompt-item">
+                    <strong>${escapeHtml(t.title)}</strong>
+                    <div class="meta" style="margin-top:6px;white-space:pre-wrap;">${escapeHtml(t.text.slice(0, 120))}…</div>
+                    <button type="button" class="btn btn-secondary btn-sm" data-prompt-idx="${idx}">在智能对话中追问</button>
+                </li>`).join('');
+
+            const posRows = positions.map(pos => `
+                <tr>
+                    <td>${pos.asset_type === 'fund' ? '基金' : '股票'}</td>
+                    <td>${escapeHtml(pos.stock_code)}</td>
+                    <td>${escapeHtml(pos.stock_name || '—')}</td>
+                    <td>${pos.has_quote ? pos.weight_pct?.toFixed(1) + '%' : '—'}</td>
+                    <td class="${pnlClass(pos.change_percent)}">${formatPct(pos.change_percent)}</td>
+                    <td class="${pnlClass(pos.unrealized_pnl_pct)}">${formatPct(pos.unrealized_pnl_pct)}</td>
+                    <td><span class="source-tag ${sourceClass(pos.quote_source)}">${sourceLabel(pos.quote_source)}</span></td>
+                </tr>`).join('');
+
+            document.getElementById('content').innerHTML = `
+                <div class="brief-trust ${trustClass}">${escapeHtml(trustText)}</div>
+                <div class="brief-grid">
+                    <div class="brief-card"><div class="label">总市值</div><div class="value">${fmtMoney(p.total_value)}</div></div>
+                    <div class="brief-card"><div class="label">浮动盈亏</div><div class="value ${pnlClass(p.unrealized_pnl_pct)}">${fmtMoney(p.unrealized_pnl)} (${formatPct(p.unrealized_pnl_pct)})</div></div>
+                    <div class="brief-card"><div class="label">持仓数</div><div class="value">${p.position_count || 0}</div></div>
+                    <div class="brief-card"><div class="label">风险告警</div><div class="value">${(data.risk?.violations || []).length}</div></div>
+                </div>
+
+                <section class="brief-section">
+                    <h2>今日关注</h2>
+                    <ul class="watch-list">${watchHtml}</ul>
+                </section>
+
+                <section class="brief-section">
+                    <h2>主题暴露</h2>
+                    <ul class="exposure-list">${expHtml}</ul>
+                </section>
+
+                <section class="brief-section">
+                    <h2>持仓明细（含数据来源）</h2>
+                    <div class="pos-table-wrap">
+                        <table class="pos-table">
+                            <thead><tr><th>类型</th><th>代码</th><th>名称</th><th>仓位</th><th>今日</th><th>浮盈</th><th>数据源</th></tr></thead>
+                            <tbody>${posRows || '<tr><td colspan="7">暂无持仓，请先添加</td></tr>'}</tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <section class="brief-section">
+                    <h2>风险规则检查</h2>
+                    <ul class="risk-list">${riskHtml}</ul>
+                </section>
+
+                <section class="brief-section">
+                    <h2>固定追问模板</h2>
+                    <ul class="prompt-list">${promptHtml || '<li class="prompt-item">添加持仓后可生成模板</li>'}</ul>
+                </section>`;
+
+            document.querySelectorAll('[data-prompt-idx]').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const t = promptTemplates[Number(btn.dataset.promptIdx)];
+                    if (!t?.text) return;
+                    DecisionAPI.openChatWithPrompt(t.text, t.title);
+                });
+            });
+        }
+
+        async function exportHistory() {
+            try {
+                const res = await Auth.authFetch(DecisionAPI.exportHistoryUrl());
+                if (!res.ok) throw new Error(await res.text());
+                const blob = await res.blob();
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = `decision_history_${new Date().toISOString().slice(0,10)}.csv`;
+                a.click();
+            } catch (err) {
+                alert('导出失败：' + err.message);
+            }
+        }
+
+        function fmtMoney(n) { return n == null ? '—' : Number(n).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+        function formatPct(n) { if (n == null || isNaN(n)) return '—'; return (n > 0 ? '+' : '') + Number(n).toFixed(2) + '%'; }
+        function pnlClass(n) { return n > 0 ? 'positive' : n < 0 ? 'negative' : ''; }
+        function sourceClass(s) { return s === 'eastmoney' ? 'live' : s === 'mock' ? 'mock' : 'missing'; }
+        function sourceLabel(s) { return ({ eastmoney: 'live', mock: 'mock', missing: '缺失' }[s] || s || '—'); }
+        function escapeHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+        function escapeAttr(s) { return escapeHtml(s).replace(/"/g,'&quot;'); }
+    </script>
+</body>
+</html>

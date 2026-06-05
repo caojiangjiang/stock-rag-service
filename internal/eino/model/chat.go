@@ -9,6 +9,7 @@ import (
 	"time"
 
 	arkmodel "github.com/cloudwego/eino-ext/components/model/ark"
+	fmodel "github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 
 	appmodel "stock_rag/internal/model"
@@ -106,6 +107,14 @@ func NewChatModel(ctx context.Context, cfg ChatConfig) (*ChatModel, error) {
 // Enabled 表示当前是否启用了真实 Ark 模型。
 func (m *ChatModel) Enabled() bool {
 	return m != nil && m.ark != nil
+}
+
+// ArkToolCallingModel 返回底层 Ark ToolCallingChatModel（供 ADK Agent 使用）。
+func (m *ChatModel) ArkToolCallingModel() fmodel.ToolCallingChatModel {
+	if m != nil && m.ark != nil {
+		return m.ark
+	}
+	return nil
 }
 
 // Generate 生成当前阶段的占位回答。
