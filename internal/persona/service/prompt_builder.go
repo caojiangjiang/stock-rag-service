@@ -74,7 +74,7 @@ func (b *PersonaPromptBuilder) BuildPersonaSystemPrompt() string {
 	parts = append(parts,
 		"只能基于检索到的资料回答；证据不足时明确说明，不要编造。",
 		"请用中文作答，语气符合上述角色，不要写成通用投研模板。",
-		"不要直接给出买卖建议。",
+		"当用户询问标的推荐、买卖方向或配置思路时，应基于角色框架与可用证据给出明确观点，说明理由、主要风险与适用条件。",
 	)
 	return strings.Join(parts, "\n")
 }
@@ -228,7 +228,7 @@ func (b *PersonaPromptBuilder) BuildRisks() []string {
 }
 
 func (b *PersonaPromptBuilder) BuildDisclaimer() string {
-	return "以上内容仅供研究交流，不构成投资建议。投资有风险，决策需谨慎。"
+	return "以上观点基于角色框架与公开信息，投资有风险，请结合自身情况独立决策。"
 }
 
 func MapCitationToEvidence(citations []appmodel.Citation) []model.EvidenceItem {

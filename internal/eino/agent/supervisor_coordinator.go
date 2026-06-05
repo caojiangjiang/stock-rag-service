@@ -7,24 +7,31 @@ import (
 
 	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/adk/prebuilt/supervisor"
-	"github.com/cloudwego/eino/schema"
-	"go.opentelemetry.io/otel/trace"
 
 	"stock_rag/internal/eino/adapter"
 )
 
 type SupervisorCoordinator struct {
 	*BaseCoordinator
-	supervisorProfile *AgentProfile
-	agentBuilder      *AgentBuilder
+	supervisorProfile     *AgentProfile
+	agentBuilder          *AgentBuilder
+	checkPointStore       adk.CheckPointStore
+	interruptSessionStore InterruptSessionStore
 }
 
-func NewSupervisorCoordinator(profileRegistry *ProfileRegistry, agentBuilder *AgentBuilder) *SupervisorCoordinator {
+func NewSupervisorCoordinator(
+	profileRegistry *ProfileRegistry,
+	agentBuilder *AgentBuilder,
+	checkPointStore adk.CheckPointStore,
+	interruptSessionStore InterruptSessionStore,
+) *SupervisorCoordinator {
 	base := NewBaseCoordinator("supervisor", profileRegistry, agentBuilder)
 	return &SupervisorCoordinator{
-		BaseCoordinator:   base,
-		supervisorProfile: TaskPlannerProfile,
-		agentBuilder:      agentBuilder,
+		BaseCoordinator:       base,
+		supervisorProfile:     TaskPlannerProfile,
+		agentBuilder:          agentBuilder,
+		checkPointStore:       checkPointStore,
+		interruptSessionStore: interruptSessionStore,
 	}
 }
 
@@ -53,6 +60,8 @@ func (c *SupervisorCoordinator) Execute(ctx context.Context, taskState *TaskStat
 		status := "success"
 		if taskState.Status == TaskStatusFailed {
 			status = "error"
+		} else if taskState.Status == TaskStatusAwaitingHuman {
+			status = "awaiting_human"
 		}
 		classifier := taskState.ClassifierType
 		if classifier == "" {
@@ -64,61 +73,100 @@ func (c *SupervisorCoordinator) Execute(ctx context.Context, taskState *TaskStat
 	runCtx, cancel := rt.DeriveContext(ctx)
 	defer cancel()
 
-	supervisorAgent, err := c.createSupervisorAgent(runCtx)
+	sv, err := c.buildSupervisor(runCtx)
 	if err != nil {
 		taskState.UpdateStatus(TaskStatusFailed)
-		taskState.AddError(fmt.Sprintf("创建 Supervisor Agent 失败: %v", err))
-		return "", err
-	}
-
-	subAgents, err := c.createSubAgents(runCtx)
-	if err != nil {
-		taskState.UpdateStatus(TaskStatusFailed)
-		taskState.AddError(fmt.Sprintf("创建子 Agent 失败: %v", err))
-		return "", err
-	}
-
-	config := &supervisor.Config{
-		Supervisor: supervisorAgent,
-		SubAgents:  subAgents,
-	}
-
-	sv, err := supervisor.New(runCtx, config)
-	if err != nil {
-		taskState.UpdateStatus(TaskStatusFailed)
-		taskState.AddError(fmt.Sprintf("创建 Supervisor 失败: %v", err))
+		taskState.AddError(err.Error())
 		return "", err
 	}
 
 	taskState.UpdateStatus(TaskStatusRunning)
-
-	userContent := taskState.UserMessage
-	if taskState.StockCode != "" {
-		userContent += fmt.Sprintf("\n\n股票代码: %s", taskState.StockCode)
+	processResult, err := RunADKWithCheckpoint(
+		runCtx, rt, taskState, sv, UserMessagesFromTask(taskState),
+		c.checkPointStore, c.interruptSessionStore, CoordinatorTypeSupervisor, taskState.OnChunk != nil,
+	)
+	if awaiting, ok := AsAwaitingHuman(err); ok {
+		content := ""
+		if processResult != nil {
+			content = processResult.Content
+		}
+		return content, awaiting
 	}
-
-	// 根据是否有 OnChunk 回调决定是否启用流式
-	input := &adk.AgentInput{
-		Messages: []adk.Message{
-			{
-				Role:    schema.User,
-				Content: userContent,
-			},
-		},
-		EnableStreaming: taskState.OnChunk != nil,
-	}
-
-	iterator := sv.Run(runCtx, input)
-	finalResult, err := rt.ProcessADKIterator(runCtx, taskState, iterator)
 	if err != nil {
 		taskState.UpdateStatus(TaskStatusFailed)
-		return finalResult, err
+		if processResult != nil {
+			return processResult.Content, err
+		}
+		return "", err
 	}
 
+	content := ""
+	if processResult != nil {
+		content = processResult.Content
+	}
 	taskState.UpdateStatus(TaskStatusCompleted)
-	taskState.Summary = finalResult
+	taskState.Summary = content
+	return content, nil
+}
 
-	return finalResult, nil
+func (c *SupervisorCoordinator) Resume(ctx context.Context, taskState *TaskState, interruptID string, resumeData any) (string, error) {
+	rt := RuntimeFromContext(ctx)
+	if rt == nil {
+		rt = NewCoordinatorRuntime(c.Name(), nil)
+	}
+	ctx, endSpan := StartCoordinatorSpan(ctx, c.Name(), taskState)
+	defer endSpan()
+
+	runCtx, cancel := rt.DeriveContext(ctx)
+	defer cancel()
+
+	sv, err := c.buildSupervisor(runCtx)
+	if err != nil {
+		taskState.UpdateStatus(TaskStatusFailed)
+		return "", err
+	}
+
+	processResult, err := ResumeADKWithCheckpoint(
+		runCtx, rt, taskState, sv, c.checkPointStore, c.interruptSessionStore,
+		CoordinatorTypeSupervisor, interruptID, resumeData, taskState.OnChunk != nil,
+	)
+	if awaiting, ok := AsAwaitingHuman(err); ok {
+		content := ""
+		if processResult != nil {
+			content = processResult.Content
+		}
+		return content, awaiting
+	}
+	if err != nil {
+		taskState.UpdateStatus(TaskStatusFailed)
+		if processResult != nil {
+			return processResult.Content, err
+		}
+		return "", err
+	}
+
+	content := ""
+	if processResult != nil {
+		content = processResult.Content
+	}
+	taskState.UpdateStatus(TaskStatusCompleted)
+	taskState.Summary = content
+	return content, nil
+}
+
+func (c *SupervisorCoordinator) buildSupervisor(ctx context.Context) (adk.Agent, error) {
+	supervisorAgent, err := c.createSupervisorAgent(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("创建 Supervisor Agent 失败: %w", err)
+	}
+	subAgents, err := c.createSubAgents(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("创建子 Agent 失败: %w", err)
+	}
+	return supervisor.New(ctx, &supervisor.Config{
+		Supervisor: supervisorAgent,
+		SubAgents:  subAgents,
+	})
 }
 
 func (c *SupervisorCoordinator) createSupervisorAgent(ctx context.Context) (adk.Agent, error) {
@@ -137,8 +185,6 @@ func (c *SupervisorCoordinator) createSupervisorAgent(ctx context.Context) (adk.
 
 请根据任务性质，合理分配任务给相应的子 Agent。`
 
-	// 使用 EinoModelAdapter 包装 llm.GetLLMClient()
-	// 调用链路: Eino ADK -> EinoModelAdapter -> llm.GetLLMClient() -> provider
 	modelAdapter := adapter.NewEinoModelAdapter()
 
 	return adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{
@@ -152,19 +198,19 @@ func (c *SupervisorCoordinator) createSupervisorAgent(ctx context.Context) (adk.
 func (c *SupervisorCoordinator) createSubAgents(ctx context.Context) ([]adk.Agent, error) {
 	var subAgents []adk.Agent
 	for _, profile := range c.GetAgentProfiles() {
-		var agent adk.Agent
+		var agentInst adk.Agent
 		var err error
 
 		if c.agentBuilder != nil {
-			agent, err = c.agentBuilder.Build(ctx, profile)
+			agentInst, err = c.agentBuilder.Build(ctx, profile)
 		} else {
-			agent, err = c.createSubAgent(ctx, profile)
+			agentInst, err = c.createSubAgent(ctx, profile)
 		}
 
 		if err != nil {
 			return nil, err
 		}
-		subAgents = append(subAgents, agent)
+		subAgents = append(subAgents, agentInst)
 	}
 	return subAgents, nil
 }
@@ -178,7 +224,6 @@ func (c *SupervisorCoordinator) createSubAgent(ctx context.Context, profile *Age
 		}
 	}
 
-	// 使用 EinoModelAdapter 包装 llm.GetLLMClient()
 	modelAdapter := adapter.NewEinoModelAdapter()
 
 	return adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{
@@ -187,202 +232,4 @@ func (c *SupervisorCoordinator) createSubAgent(ctx context.Context, profile *Age
 		Model:       modelAdapter,
 		Instruction: instruction,
 	})
-}
-
-func (c *SupervisorCoordinator) ExecuteWithCheckpoint(ctx context.Context, taskState *TaskState) (string, *InterruptInfo, error) {
-	supervisorAgent, err := c.createSupervisorAgent(ctx)
-	if err != nil {
-		taskState.UpdateStatus(TaskStatusFailed)
-		taskState.AddError(fmt.Sprintf("创建 Supervisor Agent 失败: %v", err))
-		return "", nil, err
-	}
-
-	subAgents, err := c.createSubAgents(ctx)
-	if err != nil {
-		taskState.UpdateStatus(TaskStatusFailed)
-		taskState.AddError(fmt.Sprintf("创建子 Agent 失败: %v", err))
-		return "", nil, err
-	}
-
-	config := &supervisor.Config{
-		Supervisor: supervisorAgent,
-		SubAgents:  subAgents,
-	}
-
-	sv, err := supervisor.New(ctx, config)
-	if err != nil {
-		taskState.UpdateStatus(TaskStatusFailed)
-		taskState.AddError(fmt.Sprintf("创建 Supervisor 失败: %v", err))
-		return "", nil, err
-	}
-
-	taskState.UpdateStatus(TaskStatusRunning)
-	taskState.GenerateCheckPointID()
-
-	runner := adk.NewRunner(ctx, adk.RunnerConfig{
-		EnableStreaming: false,
-		Agent:           sv,
-	})
-
-	messages := []adk.Message{
-		{
-			Role:    schema.User,
-			Content: taskState.UserMessage,
-		},
-	}
-
-	iter := runner.Run(ctx, messages, adk.WithCheckPointID(taskState.CheckPointID))
-
-	return c.processIteratorWithInterrupt(ctx, iter, taskState)
-}
-
-func (c *SupervisorCoordinator) processIteratorWithInterrupt(ctx context.Context, iter *adk.AsyncIterator[*adk.AgentEvent], taskState *TaskState) (string, *InterruptInfo, error) {
-	var finalResult string
-	var currentSpan trace.Span
-
-	for {
-		event, ok := iter.Next()
-		if !ok {
-			if currentSpan != nil {
-				currentSpan.End()
-			}
-			break
-		}
-
-		if event.Err != nil {
-			if currentSpan != nil {
-				currentSpan.End()
-			}
-			taskState.UpdateStatus(TaskStatusFailed)
-			taskState.AddError(fmt.Sprintf("Supervisor 执行错误: %v", event.Err))
-			return "", nil, event.Err
-		}
-
-		if event.Action != nil && event.Action.Interrupted != nil {
-			if currentSpan != nil {
-				currentSpan.End()
-			}
-			taskState.CreateCheckpoint(event.Action.Interrupted.InterruptContexts[0].ID)
-
-			interruptInfo := &InterruptInfo{
-				ID:        event.Action.Interrupted.InterruptContexts[0].ID,
-				Info:      event.Action.Interrupted.InterruptContexts[0].Info,
-				Address:   event.Action.Interrupted.InterruptContexts[0].Address.String(),
-				TaskState: taskState,
-			}
-
-			return finalResult, interruptInfo, nil
-		}
-
-		if event.Output != nil && event.Output.MessageOutput != nil {
-			msg, _ := event.Output.MessageOutput.GetMessage()
-			content := msg.Content
-			finalResult += content
-
-			agentName := event.AgentName
-			if agentName == "" {
-				agentName = "unknown_agent"
-			}
-
-			stepStartTime := time.Now()
-
-			ctx, currentSpan = trace.SpanFromContext(ctx).TracerProvider().Tracer("supervisor_coordinator").Start(ctx, fmt.Sprintf("agent.%s", agentName))
-
-			stepTrace := StepTrace{
-				StepID:    fmt.Sprintf("%d", taskState.CurrentStep+1),
-				ToolName:  agentName,
-				Input:     map[string]interface{}{"query": taskState.UserMessage},
-				Output:    content,
-				StartTime: stepStartTime,
-				EndTime:   time.Now(),
-				Status:    TaskStatusCompleted,
-			}
-
-			stepTrace.LatencyMS = stepTrace.EndTime.Sub(stepTrace.StartTime).Milliseconds()
-
-			taskState.AddStepTrace(stepTrace)
-			taskState.CurrentStep++
-
-			currentSpan.End()
-		}
-
-		if event.Action != nil && event.Action.TransferToAgent != nil {
-			taskState.AddFinding(fmt.Sprintf("转移到 Agent: %s", event.Action.TransferToAgent.DestAgentName))
-		}
-	}
-
-	taskState.UpdateStatus(TaskStatusCompleted)
-	taskState.Summary = finalResult
-
-	return finalResult, nil, nil
-}
-
-func (c *SupervisorCoordinator) ResumeFromCheckpoint(ctx context.Context, taskState *TaskState, interruptID string, resumeData any) (string, error) {
-	supervisorAgent, err := c.createSupervisorAgent(ctx)
-	if err != nil {
-		return "", fmt.Errorf("创建 Supervisor Agent 失败: %v", err)
-	}
-
-	subAgents, err := c.createSubAgents(ctx)
-	if err != nil {
-		return "", fmt.Errorf("创建子 Agent 失败: %v", err)
-	}
-
-	config := &supervisor.Config{
-		Supervisor: supervisorAgent,
-		SubAgents:  subAgents,
-	}
-
-	sv, err := supervisor.New(ctx, config)
-	if err != nil {
-		return "", fmt.Errorf("创建 Supervisor 失败: %v", err)
-	}
-
-	runner := adk.NewRunner(ctx, adk.RunnerConfig{
-		EnableStreaming: false,
-		Agent:           sv,
-	})
-
-	params := &adk.ResumeParams{
-		Targets: map[string]any{
-			interruptID: resumeData,
-		},
-	}
-
-	iter, err := runner.ResumeWithParams(ctx, taskState.CheckPointID, params)
-	if err != nil {
-		return "", fmt.Errorf("恢复执行失败: %v", err)
-	}
-
-	var finalResult string
-	for {
-		event, ok := iter.Next()
-		if !ok {
-			break
-		}
-
-		if event.Err != nil {
-			taskState.UpdateStatus(TaskStatusFailed)
-			taskState.AddError(fmt.Sprintf("Supervisor 执行错误: %v", event.Err))
-			return "", event.Err
-		}
-
-		if event.Output != nil && event.Output.MessageOutput != nil {
-			msg, _ := event.Output.MessageOutput.GetMessage()
-			if msg != nil {
-				finalResult = msg.Content
-				taskState.Summary = finalResult
-			}
-		}
-	}
-
-	taskState.UpdateStatus(TaskStatusCompleted)
-	return finalResult, nil
-}
-
-type InterruptInfo struct {
-	ID        string
-	Info      any
-	Address   string
-	TaskState *TaskState
 }

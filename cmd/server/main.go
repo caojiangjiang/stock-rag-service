@@ -23,13 +23,16 @@ import (
 	"stock_rag/internal/embedding"
 	"stock_rag/internal/llm"
 	"stock_rag/internal/memory"
+	"stock_rag/internal/market"
 	"stock_rag/internal/metrics"
 	"stock_rag/internal/observability"
 	"stock_rag/internal/pkg/limiter"
 	"stock_rag/internal/pkgctx"
+	"stock_rag/internal/portfolio"
 	"stock_rag/internal/repository"
 	"stock_rag/internal/router"
 	"stock_rag/internal/service"
+	"stock_rag/internal/theme"
 	"stock_rag/internal/vectorstore"
 
 	"github.com/cloudwego/eino/callbacks"
@@ -67,7 +70,7 @@ func main() {
 	// 初始化工具（注册到全局单例）
 	querySvc := initQueryService(ctx, store, embedder, redisClient)
 	initToolRegistry(querySvc)
-	coordinatorFactory := initCoordinatorFactory()
+	coordinatorFactory := initCoordinatorFactory(redisClient)
 
 	conversationStore, pgConversationStore := initConversationStore(config.Database.Postgres)
 	taskAgentService := initTaskAgentService(coordinatorFactory, conversationStore)
@@ -81,7 +84,14 @@ func main() {
 		ToolRegistry:        einotools.GetGlobalRegistry(),
 		RedisClient:         redisClient,
 	})
-	mux := api.NewRouter(querySvc, taskAgentService, authService, jwtSecret, chatService, conversationStore, pgConversationStore.DB(), redisClient, coordinatorFactory)
+	marketProvider := initMarketProvider()
+	portfolioSvc := initPortfolioService(ctx, pgConversationStore, marketProvider)
+	themeSvc := initThemeService(marketProvider)
+	var pgPool api.Pinger
+	if pgConversationStore != nil {
+		pgPool = pgConversationStore.DB()
+	}
+	mux := api.NewRouter(querySvc, taskAgentService, authService, jwtSecret, chatService, conversationStore, pgPool, redisClient, coordinatorFactory, portfolioSvc, themeSvc)
 
 	// 限流中间件
 	rateLimiter := initRateLimiter(redisClient)
@@ -232,12 +242,13 @@ func initToolRegistry(querySvc *service.QueryService) *einotools.ToolRegistry {
 	return toolRegistry
 }
 
-func initCoordinatorFactory() *einoagent.CoordinatorFactory {
+func initCoordinatorFactory(redisClient *redis.Client) *einoagent.CoordinatorFactory {
 	profileRegistry := einoagent.NewProfileRegistry()
-	// 通过全局单例获取工具注册表
 	toolRegistry := einotools.GetGlobalRegistry()
 	agentBuilder := einoagent.NewAgentBuilder(toolRegistry)
-	return einoagent.NewCoordinatorFactory(profileRegistry, agentBuilder)
+	checkPointStore := einoagent.NewADKCheckPointStore(redisClient)
+	sessionStore := einoagent.NewInterruptSessionStore(redisClient)
+	return einoagent.NewCoordinatorFactory(profileRegistry, agentBuilder, checkPointStore, sessionStore)
 }
 
 func defaultCoordinatorProfiles() []*einoagent.AgentProfile {
@@ -549,4 +560,41 @@ func serveHTTP(port string, handler http.Handler) {
 		log.Printf("server shutdown error: %v", err)
 	}
 	log.Println("server stopped")
+}
+
+func initMarketProvider() market.Provider {
+	if strings.EqualFold(strings.TrimSpace(os.Getenv("MARKET_MOCK")), "true") {
+		log.Println("Market provider: mock only (MARKET_MOCK=true)")
+		return market.NewDefaultProvider()
+	}
+	log.Println("Market provider: live (fund NAV from East Money)")
+	return market.NewLiveProvider()
+}
+
+func initPortfolioService(ctx context.Context, pgStore *repository.PostgresConversationStore, provider market.Provider) *portfolio.Service {
+	var store portfolio.Store
+	if pgStore != nil && pgStore.DB() != nil {
+		store = portfolio.NewPostgresStore(pgStore.DB())
+		log.Println("Portfolio store: PostgreSQL")
+	} else {
+		store = portfolio.NewMemoryStore()
+		log.Println("Portfolio store: in-memory (PostgreSQL unavailable)")
+	}
+	svc := portfolio.NewService(store, provider)
+	if err := svc.Init(ctx); err != nil {
+		log.Printf("Warning: portfolio init failed: %v", err)
+	}
+	return svc
+}
+
+func initThemeService(provider market.Provider) *theme.Service {
+	regPath := os.Getenv("THEME_REGISTRY_CONFIG")
+	if regPath == "" {
+		regPath = "configs/theme_registry.yaml"
+	}
+	universePath := os.Getenv("PERSONA_UNIVERSE_CONFIG")
+	if universePath == "" {
+		universePath = "configs/persona_daily_picks_universe.yaml"
+	}
+	return theme.NewService(regPath, universePath, provider)
 }

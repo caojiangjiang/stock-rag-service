@@ -78,6 +78,29 @@ func (a *CoordinatorSupervisorAdapter) ExecuteComplexTask(ctx context.Context, r
 
 		latencyMs := int(time.Since(start).Milliseconds())
 
+		if awaiting, ok := AsAwaitingHuman(err); ok {
+			status := "awaiting_human"
+			classifier := taskState.ClassifierType
+			if classifier == "" {
+				classifier = "unknown"
+			}
+			RecordCoordinatorResult(coordinatorName, classifier, status, time.Since(start).Seconds())
+			metrics.RecordAgentComplexTask(endpoint, status, time.Since(start).Seconds())
+			resp := &service.ComplexTaskResponse{
+				MessageID:     req.MessageID,
+				Content:       result,
+				LatencyMs:     latencyMs,
+				AwaitingHuman: true,
+			}
+			if awaiting.Interrupt != nil {
+				resp.CheckPointID = awaiting.Interrupt.CheckPointID
+				resp.InterruptID = awaiting.Interrupt.ID
+				resp.InterruptInfo = awaiting.Interrupt.Info
+				resp.PartialContent = awaiting.Interrupt.PartialResult
+			}
+			return resp, nil
+		}
+
 		if err == nil {
 			status := "success"
 			if taskState.Status == TaskStatusFailed {

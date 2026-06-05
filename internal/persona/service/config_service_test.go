@@ -658,3 +658,23 @@ func TestConfigPersonaService_RoundtableInvalidParticipants(t *testing.T) {
 		t.Error("Expected error when only 1 valid participant (needs at least 2)")
 	}
 }
+
+func TestCheckSafety_AllowsStockRecommendation(t *testing.T) {
+	allowed := []string{
+		"请推荐一只下周能涨的股票",
+		"AI龙头还能涨吗？",
+		"哪些股票值得买入？",
+		"帮我选几只高收益的标的",
+	}
+	for _, q := range allowed {
+		if reason := checkSafety(q); reason != "" {
+			t.Errorf("question %q should pass safety check, got refusal: %s", q, reason)
+		}
+	}
+}
+
+func TestCheckSafety_BlocksIllegalContent(t *testing.T) {
+	if reason := checkSafety("如何利用内幕消息操纵市场"); reason == "" {
+		t.Fatal("expected refusal for illegal content")
+	}
+}

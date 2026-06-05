@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>我的持仓 - Stock RAG</title>
+    <link rel="stylesheet" href="css/app.css?v=5">
+    <link rel="stylesheet" href="css/portfolio.css?v=3">
+</head>
+<body>
+    <div class="portfolio-page">
+        <div class="risk-banner">
+            <p>⚠️ 风险提示：持仓数据仅供个人记录与参考，不构成投资建议。</p>
+        </div>
+
+        <div class="portfolio-container">
+            <header class="portfolio-header">
+                <div>
+                    <h1>我的持仓</h1>
+                    <p>管理股票与基金持仓，查看成本、市值与浮动盈亏</p>
+                </div>
+                <a href="index.html" class="back-link">← 返回首页</a>
+            </header>
+
+            <section class="portfolio-summary" id="summary-cards">
+                <div class="summary-card">
+                    <div class="label">持仓数量</div>
+                    <div class="value" id="summary-count">—</div>
+                </div>
+                <div class="summary-card">
+                    <div class="label">总成本</div>
+                    <div class="value" id="summary-cost">—</div>
+                </div>
+                <div class="summary-card">
+                    <div class="label">总市值</div>
+                    <div class="value" id="summary-value">—</div>
+                </div>
+                <div class="summary-card">
+                    <div class="label">浮动盈亏</div>
+                    <div class="value" id="summary-pnl">—</div>
+                    <div class="sub" id="summary-pnl-pct"></div>
+                </div>
+            </section>
+
+            <div class="portfolio-filter-tabs" id="filter-tabs">
+                <button type="button" class="filter-tab active" data-filter="all">全部</button>
+                <button type="button" class="filter-tab" data-filter="stock">股票</button>
+                <button type="button" class="filter-tab" data-filter="fund">基金</button>
+            </div>
+
+            <div class="portfolio-toolbar">
+                <h2>持仓明细</h2>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                    <button type="button" class="btn btn-primary" id="quick-import-btn">📥 从 App 导入基金</button>
+                    <button type="button" class="btn btn-secondary" id="add-stock-btn">+ 添加股票</button>
+                    <button type="button" class="btn btn-secondary" id="add-fund-btn">+ 添加基金</button>
+                </div>
+            </div>
+
+            <div class="portfolio-table-wrap" id="positions-container">
+                <div class="loading-state" style="padding: 40px; text-align: center;">
+                    <p>加载中...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="portfolio-modal-overlay" id="position-modal">
+        <div class="portfolio-modal" role="dialog" aria-labelledby="modal-title">
+            <div class="portfolio-modal-header">
+                <h3 id="modal-title">添加持仓</h3>
+                <button type="button" class="portfolio-modal-close" id="modal-close-btn" aria-label="关闭">×</button>
+            </div>
+            <form id="position-form">
+                <div class="portfolio-modal-body">
+                    <div class="form-group">
+                        <label for="asset-type">资产类型 *</label>
+                        <select id="asset-type" name="asset_type" required>
+                            <option value="stock">股票</option>
+                            <option value="fund">基金</option>
+                        </select>
+                    </div>
+                    <div class="portfolio-form-row">
+                        <div class="form-group">
+                            <label for="stock-code" id="code-label">股票代码 *</label>
+                            <input type="text" id="stock-code" name="stock_code" required placeholder="如 600519 / NVDA">
+                        </div>
+                        <div class="form-group">
+                            <label for="stock-name" id="name-label">名称</label>
+                            <input type="text" id="stock-name" name="stock_name" placeholder="可选">
+                        </div>
+                    </div>
+                    <div class="portfolio-form-row">
+                        <div class="form-group">
+                            <label for="market">市场 *</label>
+                            <select id="market" name="market" required>
+                                <option value="cn">A股 (cn)</option>
+                                <option value="us">美股 (us)</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="currency">币种</label>
+                            <select id="currency" name="currency">
+                                <option value="">自动</option>
+                                <option value="CNY">CNY</option>
+                                <option value="USD">USD</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="portfolio-form-row">
+                        <div class="form-group">
+                            <label for="quantity" id="quantity-label">持仓数量 *</label>
+                            <input type="number" id="quantity" name="quantity" required min="0" step="any" placeholder="100">
+                        </div>
+                        <div class="form-group">
+                            <label for="cost-price" id="cost-label">成本价 *</label>
+                            <input type="number" id="cost-price" name="cost_price" required min="0" step="any" placeholder="1600">
+                        </div>
+                    </div>
+                    <div class="form-group" id="fund-hint" style="display:none;">
+                        <p class="form-hint">
+                            <strong>份额</strong>：你买了多少「份」基金（不是股数）。<br>
+                            <strong>单位净值</strong>：每份基金今天值多少钱，用于算市值和盈亏。<br>
+                            <strong>累计净值</strong>：含历史分红后的参考价，主要用于对比基金长期业绩，<em>录入持仓请用单位净值</em>。
+                        </p>
+                    </div>
+                    <div class="form-group">
+                        <label for="thesis">投资逻辑 / 备注</label>
+                        <textarea id="thesis" name="thesis" placeholder="为什么持有？"></textarea>
+                    </div>
+                </div>
+                <div class="portfolio-modal-footer">
+                    <button type="button" class="btn btn-secondary" id="modal-cancel-btn">取消</button>
+                    <button type="submit" class="btn btn-primary" id="modal-save-btn">保存</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="portfolio-modal-overlay" id="import-modal">
+        <div class="portfolio-modal portfolio-modal-wide" role="dialog">
+            <div class="portfolio-modal-header">
+                <h3>从支付宝 / 天天基金导入</h3>
+                <button type="button" class="portfolio-modal-close" id="import-close-btn" aria-label="关闭">×</button>
+            </div>
+            <form id="import-form">
+                <div class="portfolio-modal-body">
+                    <p class="form-hint" style="margin-bottom:16px;">
+                        打开 App「资产详情」页，抄<strong>基金代码、持有金额、持有收益</strong>即可；单位净值会自动从天天基金拉取。
+                    </p>
+                    <div class="portfolio-form-row">
+                        <div class="form-group">
+                            <label for="import-code">基金代码 *</label>
+                            <input type="text" id="import-code" required placeholder="003095">
+                        </div>
+                        <div class="form-group">
+                            <label for="import-name">基金名称</label>
+                            <input type="text" id="import-name" placeholder="中欧医疗健康混合A">
+                        </div>
+                    </div>
+                    <div class="portfolio-form-row">
+                        <div class="form-group">
+                            <label for="import-value">持有金额 * <span class="label-tip">App 上的「金额」</span></label>
+                            <input type="number" id="import-value" required step="0.01" placeholder="80962.37">
+                        </div>
+                        <div class="form-group">
+                            <label for="import-pnl">持有收益 * <span class="label-tip">可为负数</span></label>
+                            <input type="number" id="import-pnl" required step="0.01" placeholder="-32762.71">
+                        </div>
+                    </div>
+                    <div class="portfolio-form-row">
+                        <div class="form-group">
+                            <label for="import-nav">单位净值 <span class="label-tip" id="import-nav-tip">输入代码后自动拉取</span></label>
+                            <input type="number" id="import-nav" step="0.0001" placeholder="自动拉取">
+                        </div>
+                        <div class="form-group">
+                            <label for="import-pnl-pct">持有收益率 % <span class="label-tip">可选校验</span></label>
+                            <input type="number" id="import-pnl-pct" step="0.01" placeholder="-28.74">
+                        </div>
+                    </div>
+                    <div class="import-preview" id="import-preview">
+                        <p>填写完成后将自动预览换算结果</p>
+                    </div>
+                </div>
+                <div class="portfolio-modal-footer">
+                    <button type="button" class="btn btn-secondary" id="import-fill-screenshot-btn">填入截图数据</button>
+                    <button type="button" class="btn btn-secondary" id="import-cancel-btn">取消</button>
+                    <button type="submit" class="btn btn-primary" id="import-save-btn">确认导入</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="portfolio-toast" id="toast"></div>
+
+    <script src="js/auth.js"></script>
+    <script src="js/portfolio-api.js"></script>
+    <script>
+        let currentSummary = null;
+        let editingPosition = null;
+        let activeFilter = 'all';
+
+        const SCREENSHOT_IMPORT = {
+            stock_code: '003095',
+            stock_name: '中欧医疗健康混合A',
+            market_value: 80962.37,
+            holding_pnl: -32762.71,
+            holding_pnl_pct: -28.74,
+        };
+        let navFetchToken = 0;
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            const ok = await Auth.ensureAuthenticated({ redirect: true });
+            if (!ok) return;
+
+            document.getElementById('quick-import-btn').addEventListener('click', () => openImportModal());
+            document.getElementById('add-stock-btn').addEventListener('click', () => openModal(null, 'stock'));
+            document.getElementById('add-fund-btn').addEventListener('click', () => openModal(null, 'fund'));
+            document.getElementById('import-close-btn').addEventListener('click', closeImportModal);
+            document.getElementById('import-cancel-btn').addEventListener('click', closeImportModal);
+            document.getElementById('import-modal').addEventListener('click', (e) => {
+                if (e.target.id === 'import-modal') closeImportModal();
+            });
+            document.getElementById('import-form').addEventListener('submit', handleImportSubmit);
+            document.getElementById('import-fill-screenshot-btn').addEventListener('click', fillScreenshotImport);
+            ['import-code', 'import-name', 'import-value', 'import-pnl', 'import-nav', 'import-pnl-pct'].forEach(id => {
+                document.getElementById(id).addEventListener('input', debounce(refreshImportPreview, 400));
+            });
+            document.getElementById('import-code').addEventListener('blur', fetchImportNav);
+            document.getElementById('import-code').addEventListener('change', fetchImportNav);
+            document.getElementById('modal-close-btn').addEventListener('click', closeModal);
+            document.getElementById('modal-cancel-btn').addEventListener('click', closeModal);
+            document.getElementById('position-modal').addEventListener('click', (e) => {
+                if (e.target.id === 'position-modal') closeModal();
+            });
+            document.getElementById('position-form').addEventListener('submit', handleSubmit);
+            document.getElementById('asset-type').addEventListener('change', updateFormLabels);
+            document.getElementById('filter-tabs').addEventListener('click', (e) => {
+                const tab = e.target.closest('.filter-tab');
+                if (!tab) return;
+                activeFilter = tab.dataset.filter;
+                document.querySelectorAll('.filter-tab').forEach(el => el.classList.remove('active'));
+                tab.classList.add('active');
+                renderPositions(currentSummary?.positions || []);
+            });
+
+            await loadPortfolio();
+
+            const params = new URLSearchParams(location.search);
+            if (params.get('import') === '003095' || params.get('autoimport') === '1') {
+                openImportModal(true);
+                if (params.get('autoimport') === '1') {
+                    await handleImportSubmit(null, true);
+                }
+            }
+        });
+
+        function debounce(fn, ms) {
+            let t;
+            return (...args) => {
+                clearTimeout(t);
+                t = setTimeout(() => fn(...args), ms);
+            };
+        }
+
+        function fillScreenshotImport() {
+            document.getElementById('import-code').value = SCREENSHOT_IMPORT.stock_code;
+            document.getElementById('import-name').value = SCREENSHOT_IMPORT.stock_name;
+            document.getElementById('import-value').value = SCREENSHOT_IMPORT.market_value;
+            document.getElementById('import-pnl').value = SCREENSHOT_IMPORT.holding_pnl;
+            document.getElementById('import-pnl-pct').value = SCREENSHOT_IMPORT.holding_pnl_pct;
+            fetchImportNav().then(() => refreshImportPreview());
+        }
+
+        async function fetchImportNav() {
+            const code = document.getElementById('import-code').value.trim();
+            const tip = document.getElementById('import-nav-tip');
+            if (!code) {
+                tip.textContent = '输入代码后自动拉取';
+                return;
+            }
+            const token = ++navFetchToken;
+            tip.textContent = '拉取中…';
+            try {
+                const q = await PortfolioAPI.fetchFundNav(code);
+                if (token !== navFetchToken) return;
+                document.getElementById('import-nav').value = q.price;
+                if (!document.getElementById('import-name').value && q.stock_name) {
+                    document.getElementById('import-name').value = q.stock_name;
+                }
+                const acc = q.acc_nav ? `，累计 ${q.acc_nav.toFixed(4)}` : '';
+                tip.textContent = `${q.nav_date || '最新'} · ${q.source || 'eastmoney'}${acc}`;
+                refreshImportPreview();
+            } catch (err) {
+                if (token !== navFetchToken) return;
+                tip.textContent = '拉取失败，可手动填写';
+                showToast(err.message, true);
+            }
+        }
+
+        function openImportModal(autoFill) {
+            document.getElementById('import-form').reset();
+            document.getElementById('import-preview').innerHTML = '<p>填写完成后将自动预览换算结果</p>';
+            document.getElementById('import-nav-tip').textContent = '输入代码后自动拉取';
+            if (autoFill) fillScreenshotImport();
+            document.getElementById('import-modal').classList.add('show');
+        }
+
+        function closeImportModal() {
+            document.getElementById('import-modal').classList.remove('show');
+        }
+
+        function buildImportPayload() {
+            const payload = {
+                stock_code: document.getElementById('import-code').value.trim(),
+                stock_name: document.getElementById('import-name').value.trim(),
+                market_value: parseFloat(document.getElementById('import-value').value),
+                holding_pnl: parseFloat(document.getElementById('import-pnl').value),
+            };
+            const navVal = document.getElementById('import-nav').value;
+            if (navVal !== '') payload.unit_nav = parseFloat(navVal);
+            const pct = document.getElementById('import-pnl-pct').value;
+            if (pct !== '') payload.holding_pnl_pct = parseFloat(pct);
+            return payload;
+        }
+
+        async function refreshImportPreview() {
+            const previewEl = document.getElementById('import-preview');
+            const payload = buildImportPayload();
+            if (!payload.stock_code || !payload.market_value || isNaN(payload.holding_pnl)) {
+                previewEl.innerHTML = '<p>填写完成后将自动预览换算结果</p>';
+                return;
+            }
+            if (!payload.unit_nav) {
+                previewEl.innerHTML = '<p>等待拉取单位净值，或手动填写</p>';
+                return;
+            }
+            try {
+                const p = await PortfolioAPI.previewFundImport(payload);
+                previewEl.innerHTML = `
+                    <h4>换算预览</h4>
+                    <ul>
+                        <li>持有份额：<strong>${formatNumber(p.quantity)}</strong> 份</li>
+                        <li>成本单位净值：<strong>${p.cost_price.toFixed(4)}</strong>（总成本 ${formatMoney(p.cost_total)}）</li>
+                        <li>校验持有收益率：<strong class="${pnlClass(p.holding_pnl_pct)}">${formatSignedPercent(p.holding_pnl_pct)}</strong></li>
+                    </ul>`;
+            } catch (err) {
+                previewEl.innerHTML = `<p class="preview-error">${escapeHtml(err.message)}</p>`;
+            }
+        }
+
+        async function handleImportSubmit(e, silent) {
+            if (e) e.preventDefault();
+            const btn = document.getElementById('import-save-btn');
+            btn.disabled = true;
+            try {
+                const payload = buildImportPayload();
+                const result = await PortfolioAPI.importFund(payload);
+                closeImportModal();
+                activeFilter = 'fund';
+                document.querySelectorAll('.filter-tab').forEach(el => {
+                    el.classList.toggle('active', el.dataset.filter === 'fund');
+                });
+                showToast(`已导入 ${result.preview.stock_name || result.preview.stock_code}`);
+                await loadPortfolio();
+                if (silent && location.search.includes('autoimport')) {
+                    history.replaceState({}, '', 'portfolio.html');
+                }
+            } catch (err) {
+                showToast(err.message, true);
+                if (silent) openImportModal(false);
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        async function loadPortfolio() {
+            try {
+                currentSummary = await PortfolioAPI.getSummary();
+                renderSummary(currentSummary);
+                renderPositions(currentSummary.positions || []);
+            } catch (err) {
+                document.getElementById('positions-container').innerHTML = `
+                    <div class="portfolio-empty">
+                        <h3>加载失败</h3>
+                        <p>${escapeHtml(err.message)}</p>
+                    </div>`;
+            }
+        }
+
+        function renderSummary(summary) {
+            document.getElementById('summary-count').textContent = summary.position_count ?? 0;
+            document.getElementById('summary-cost').textContent = formatMoney(summary.total_cost);
+            document.getElementById('summary-value').textContent = formatMoney(summary.total_value);
+
+            const pnlEl = document.getElementById('summary-pnl');
+            const pnl = summary.unrealized_pnl ?? 0;
+            pnlEl.textContent = formatSignedMoney(pnl);
+            pnlEl.className = 'value ' + pnlClass(pnl);
+
+            const pctEl = document.getElementById('summary-pnl-pct');
+            const pct = summary.unrealized_pnl_pct ?? 0;
+            pctEl.textContent = pct !== 0 ? formatSignedPercent(pct) : '';
+            pctEl.className = 'sub ' + pnlClass(pct);
+        }
+
+        function filterPositions(positions) {
+            if (activeFilter === 'all') return positions;
+            return positions.filter(p => (p.asset_type || 'stock') === activeFilter);
+        }
+
+        function renderPositions(positions) {
+            const filtered = filterPositions(positions);
+            const container = document.getElementById('positions-container');
+            if (!filtered.length) {
+                const hint = activeFilter === 'fund'
+                    ? '点击「添加基金」录入你的第一只基金'
+                    : activeFilter === 'stock'
+                        ? '点击「添加股票」录入你的第一只股票'
+                        : '点击上方按钮录入股票或基金持仓';
+                container.innerHTML = `
+                    <div class="portfolio-empty">
+                        <h3>暂无持仓</h3>
+                        <p>${hint}</p>
+                    </div>`;
+                return;
+            }
+
+            const rows = filtered.map(p => {
+                const market = (p.market || 'cn').toLowerCase();
+                const assetType = p.asset_type || 'stock';
+                const isFund = assetType === 'fund';
+                return `
+                    <tr data-id="${escapeAttr(p.id)}">
+                        <td><span class="asset-badge ${assetType}">${isFund ? '基金' : '股票'}</span></td>
+                        <td>
+                            <strong>${escapeHtml(p.stock_code)}</strong>
+                            <div style="font-size:0.78rem;color:var(--muted);margin-top:2px;">${escapeHtml(p.stock_name || '—')}</div>
+                        </td>
+                        <td><span class="market-badge ${market}">${market === 'us' ? '美股' : 'A股'}</span></td>
+                        <td class="num">${formatNumber(p.quantity)}${isFund ? ' 份' : ''}</td>
+                        <td class="num">${formatMoney(p.cost_price)}</td>
+                        <td class="num">${p.has_quote ? formatMoney(p.current_price) : '—'}</td>
+                        <td class="num ${p.has_quote ? pnlClass(p.change_percent) : ''}">${p.has_quote ? formatSignedPercent(p.change_percent) : '—'}</td>
+                        <td class="num">${formatMoney(p.market_value)}</td>
+                        <td class="num ${pnlClass(p.unrealized_pnl)}">${formatSignedMoney(p.unrealized_pnl)}</td>
+                        <td class="num ${pnlClass(p.unrealized_pnl_pct)}">${p.unrealized_pnl_pct ? formatSignedPercent(p.unrealized_pnl_pct) : '—'}</td>
+                        <td class="thesis-cell" title="${escapeAttr(p.thesis || '')}">${escapeHtml(p.thesis || '—')}</td>
+                        <td>
+                            <div class="row-actions">
+                                <button type="button" class="btn-icon" data-action="edit">编辑</button>
+                                <button type="button" class="btn-icon danger" data-action="delete">删除</button>
+                            </div>
+                        </td>
+                    </tr>`;
+            }).join('');
+
+            const priceHeader = activeFilter === 'fund' ? '单位净值' : activeFilter === 'stock' ? '现价' : '现价 / 单位净值';
+            const costHeader = activeFilter === 'fund' ? '成本单位净值' : '成本';
+            const qtyHeader = activeFilter === 'fund' ? '份额' : '数量';
+
+            container.innerHTML = `
+                <table class="portfolio-table">
+                    <thead>
+                        <tr>
+                            <th>类型</th>
+                            <th>代码 / 名称</th>
+                            <th>市场</th>
+                            <th>${qtyHeader}</th>
+                            <th>${costHeader}</th>
+                            <th>${priceHeader}</th>
+                            <th>涨跌</th>
+                            <th>市值</th>
+                            <th>浮盈</th>
+                            <th>浮盈%</th>
+                            <th>备注</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>${rows}</tbody>
+                </table>`;
+
+            container.querySelector('tbody').addEventListener('click', async (e) => {
+                const btn = e.target.closest('[data-action]');
+                if (!btn) return;
+                const row = btn.closest('tr');
+                const id = row.dataset.id;
+                const pos = positions.find(p => p.id === id);
+                if (!pos) return;
+
+                if (btn.dataset.action === 'edit') {
+                    openModal(pos);
+                } else if (btn.dataset.action === 'delete') {
+                    await handleDelete(pos);
+                }
+            });
+        }
+
+        function updateFormLabels() {
+            const isFund = document.getElementById('asset-type').value === 'fund';
+            document.getElementById('code-label').textContent = isFund ? '基金代码 *' : '股票代码 *';
+            document.getElementById('name-label').textContent = isFund ? '基金名称' : '股票名称';
+            document.getElementById('quantity-label').textContent = isFund ? '持有份额 *' : '持仓数量 *';
+            document.getElementById('cost-label').textContent = isFund ? '买入单位净值 *' : '成本价 *';
+            document.getElementById('fund-hint').style.display = isFund ? 'block' : 'none';
+            document.getElementById('stock-code').placeholder = isFund ? '如 005827 / 110011' : '如 600519 / NVDA';
+            document.getElementById('quantity').placeholder = isFund ? '10000' : '100';
+            document.getElementById('cost-price').placeholder = isFund ? '2.05' : '1600';
+            if (isFund && !editingPosition) {
+                document.getElementById('market').value = 'cn';
+            }
+        }
+
+        function openModal(position, defaultType) {
+            editingPosition = position || null;
+            const form = document.getElementById('position-form');
+            form.reset();
+
+            const assetType = position?.asset_type || defaultType || 'stock';
+            document.getElementById('modal-title').textContent = position
+                ? (assetType === 'fund' ? '编辑基金持仓' : '编辑股票持仓')
+                : (assetType === 'fund' ? '添加基金' : '添加股票');
+            document.getElementById('asset-type').value = assetType;
+            document.getElementById('asset-type').disabled = !!position;
+            document.getElementById('stock-code').disabled = !!position;
+            updateFormLabels();
+
+            if (position) {
+                document.getElementById('stock-code').value = position.stock_code || '';
+                document.getElementById('stock-name').value = position.stock_name || '';
+                document.getElementById('market').value = (position.market || 'cn').toLowerCase();
+                document.getElementById('currency').value = position.currency || '';
+                document.getElementById('quantity').value = position.quantity ?? '';
+                document.getElementById('cost-price').value = position.cost_price ?? '';
+                document.getElementById('thesis').value = position.thesis || '';
+            }
+
+            document.getElementById('position-modal').classList.add('show');
+        }
+
+        function closeModal() {
+            document.getElementById('position-modal').classList.remove('show');
+            editingPosition = null;
+            document.getElementById('stock-code').disabled = false;
+            document.getElementById('asset-type').disabled = false;
+        }
+
+        async function handleSubmit(e) {
+            e.preventDefault();
+            const saveBtn = document.getElementById('modal-save-btn');
+            saveBtn.disabled = true;
+
+            const payload = {
+                asset_type: document.getElementById('asset-type').value,
+                stock_code: document.getElementById('stock-code').value.trim(),
+                stock_name: document.getElementById('stock-name').value.trim(),
+                market: document.getElementById('market').value,
+                quantity: parseFloat(document.getElementById('quantity').value),
+                cost_price: parseFloat(document.getElementById('cost-price').value),
+                thesis: document.getElementById('thesis').value.trim(),
+            };
+            const currency = document.getElementById('currency').value;
+            if (currency) payload.currency = currency;
+
+            try {
+                await PortfolioAPI.upsertPosition(payload);
+                closeModal();
+                showToast(editingPosition ? '持仓已更新' : '持仓已添加');
+                await loadPortfolio();
+            } catch (err) {
+                showToast(err.message, true);
+            } finally {
+                saveBtn.disabled = false;
+            }
+        }
+
+        async function handleDelete(position) {
+            const label = `${position.stock_code}${position.stock_name ? ' ' + position.stock_name : ''}`;
+            if (!confirm(`确定删除持仓「${label}」？`)) return;
+
+            try {
+                await PortfolioAPI.deletePosition(position.id);
+                showToast('持仓已删除');
+                await loadPortfolio();
+            } catch (err) {
+                showToast(err.message, true);
+            }
+        }
+
+        function formatNumber(n) {
+            if (n == null || Number.isNaN(n)) return '—';
+            return Number(n).toLocaleString('zh-CN', { maximumFractionDigits: 4 });
+        }
+
+        function formatMoney(n) {
+            if (n == null || Number.isNaN(n)) return '—';
+            return Number(n).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+
+        function formatSignedMoney(n) {
+            if (n == null || Number.isNaN(n)) return '—';
+            const prefix = n > 0 ? '+' : '';
+            return prefix + formatMoney(n);
+        }
+
+        function formatSignedPercent(n) {
+            if (n == null || Number.isNaN(n)) return '—';
+            const prefix = n > 0 ? '+' : '';
+            return prefix + Number(n).toFixed(2) + '%';
+        }
+
+        function pnlClass(n) {
+            if (n > 0) return 'positive';
+            if (n < 0) return 'negative';
+            return '';
+        }
+
+        function showToast(msg, isError) {
+            const el = document.getElementById('toast');
+            el.textContent = msg;
+            el.className = 'portfolio-toast show' + (isError ? ' error' : '');
+            clearTimeout(showToast._timer);
+            showToast._timer = setTimeout(() => el.classList.remove('show'), 2800);
+        }
+
+        function escapeHtml(str) {
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;');
+        }
+
+        function escapeAttr(str) {
+            return escapeHtml(str).replace(/'/g, '&#39;');
+        }
+    </script>
+</body>
+</html>

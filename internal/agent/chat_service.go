@@ -92,6 +92,11 @@ type ChatResponse struct {
 	LatencyMs      int           `json:"latency_ms"`
 	Citations      []interface{} `json:"citations,omitempty"`
 	Error          string        `json:"error,omitempty"`
+	AwaitingHuman  bool          `json:"awaiting_human,omitempty"`
+	CheckPointID   string        `json:"checkpoint_id,omitempty"`
+	InterruptID    string        `json:"interrupt_id,omitempty"`
+	InterruptInfo  string        `json:"interrupt_info,omitempty"`
+	PartialContent string        `json:"partial_content,omitempty"`
 }
 
 // chatError 创建统一的聊天错误响应
@@ -146,6 +151,8 @@ func (s *ChatService) chat(ctx context.Context, req *ChatRequest, onChunk func(s
 			}
 			if resp.Error != "" {
 				status = "error"
+			} else if resp.AwaitingHuman {
+				status = "awaiting_human"
 			}
 		}
 		if err != nil {
@@ -315,6 +322,10 @@ func (s *ChatService) execute(cc *chatContext) (*ChatResponse, error) {
 		"mode", string(cc.routeDecision.SelectedMode),
 	)
 
+	if cc.routeDecision.SelectedMode == router.ModeAgent {
+		_ = repository.SetConversationStatus(cc.ctx, s.conversation, cc.convID, repository.ConversationStatusRunning)
+	}
+
 	var err error
 	cc.executeResp, err = s.executor.Execute(cc.ctx, cc.executeReq)
 	if err != nil {
@@ -327,10 +338,22 @@ func (s *ChatService) execute(cc *chatContext) (*ChatResponse, error) {
 
 	if cc.executeResp.Error != "" {
 		observability.L().ErrorCtx(cc.ctx, "Execution returned error", nil, "error", cc.executeResp.Error)
+		_ = repository.SetConversationStatus(cc.ctx, s.conversation, cc.convID, repository.ConversationStatusActive)
 		return chatError(cc.convID, cc.executeResp.Error, nil)
 	}
 
-	if cc.onChunk != nil && cc.routeDecision.SelectedMode == router.ModeAgent {
+	if cc.executeResp.AwaitingHuman {
+		_ = repository.SetConversationStatus(cc.ctx, s.conversation, cc.convID, repository.ConversationStatusPendingHuman)
+		observability.L().InfoCtx(cc.ctx, "Execution awaiting human",
+			"conversation_id", cc.convID,
+			"checkpoint_id", cc.executeResp.CheckPointID,
+			"interrupt_id", cc.executeResp.InterruptID,
+		)
+	} else if cc.routeDecision.SelectedMode == router.ModeAgent {
+		_ = repository.SetConversationStatus(cc.ctx, s.conversation, cc.convID, repository.ConversationStatusActive)
+	}
+
+	if cc.onChunk != nil && cc.routeDecision.SelectedMode == router.ModeAgent && !cc.executeResp.AwaitingHuman {
 		if err := EmitStreamChunks(cc.onChunk, cc.executeResp.Content); err != nil {
 			return chatError(cc.convID, "流式输出失败", err)
 		}
@@ -343,7 +366,7 @@ func (s *ChatService) execute(cc *chatContext) (*ChatResponse, error) {
 		"output_tokens", cc.executeResp.OutputTokens,
 	)
 
-	if s.exactCache != nil {
+	if s.exactCache != nil && !cc.executeResp.AwaitingHuman {
 		cacheKey := buildExactCacheKey(cc.req.Message, string(cc.routeDecision.SelectedMode),
 			cc.req.StockCode, cc.req.DocType, cc.req.TimeRange)
 		go func() {
@@ -362,7 +385,20 @@ func (s *ChatService) execute(cc *chatContext) (*ChatResponse, error) {
 
 // saveAssistantMessage 保存助手消息
 func (s *ChatService) saveAssistantMessage(cc *chatContext) error {
-	cc.assistantMsg = repository.NewMessage(cc.convID, cc.req.UserID, "assistant", cc.executeResp.Content, nil)
+	content := cc.executeResp.Content
+	if cc.executeResp.AwaitingHuman && cc.executeResp.PartialContent != "" {
+		content = cc.executeResp.PartialContent
+	}
+	var metadata map[string]interface{}
+	if cc.executeResp.AwaitingHuman {
+		metadata = map[string]interface{}{
+			"awaiting_human": true,
+			"checkpoint_id":  cc.executeResp.CheckPointID,
+			"interrupt_id":   cc.executeResp.InterruptID,
+			"interrupt_info": cc.executeResp.InterruptInfo,
+		}
+	}
+	cc.assistantMsg = repository.NewMessage(cc.convID, cc.req.UserID, "assistant", content, metadata)
 	if cc.executeResp.MessageID != "" {
 		cc.assistantMsg.ID = cc.executeResp.MessageID
 	}
@@ -390,15 +426,24 @@ func (s *ChatService) buildResponse(cc *chatContext) *ChatResponse {
 	latency := int(time.Since(cc.startTime).Milliseconds())
 	observability.L().InfoCtx(cc.ctx, "Chat request completed", "latency_ms", latency)
 
+	content := cc.executeResp.Content
+	if cc.executeResp.AwaitingHuman && cc.executeResp.PartialContent != "" {
+		content = cc.executeResp.PartialContent
+	}
 	return &ChatResponse{
 		ConversationID: cc.convID,
 		MessageID:      cc.executeResp.MessageID,
-		Content:        cc.executeResp.Content,
+		Content:        content,
 		Mode:           string(cc.executeResp.Mode),
 		InputTokens:    cc.executeResp.InputTokens,
 		OutputTokens:   cc.executeResp.OutputTokens,
 		LatencyMs:      latency,
 		Citations:      s.citationsToInterface(cc.executeResp.Citations),
+		AwaitingHuman:  cc.executeResp.AwaitingHuman,
+		CheckPointID:   cc.executeResp.CheckPointID,
+		InterruptID:    cc.executeResp.InterruptID,
+		InterruptInfo:  cc.executeResp.InterruptInfo,
+		PartialContent: cc.executeResp.PartialContent,
 	}
 }
 

@@ -53,12 +53,17 @@ func (e *ModeAgentExecutor) Execute(ctx context.Context, req *ExecuteRequest) (*
 	}
 
 	return &ExecuteResponse{
-		MessageID:    resp.MessageID,
-		Content:      resp.Content,
-		Mode:         router.ModeAgent,
-		InputTokens:  resp.InputTokens,
-		OutputTokens: resp.OutputTokens,
-		LatencyMs:    resp.LatencyMs,
-		Error:        resp.Error,
+		MessageID:      resp.MessageID,
+		Content:        resp.Content,
+		Mode:           router.ModeAgent,
+		InputTokens:    resp.InputTokens,
+		OutputTokens:   resp.OutputTokens,
+		LatencyMs:      resp.LatencyMs,
+		Error:          resp.Error,
+		AwaitingHuman:  resp.AwaitingHuman,
+		CheckPointID:   resp.CheckPointID,
+		InterruptID:    resp.InterruptID,
+		InterruptInfo:  resp.InterruptInfo,
+		PartialContent: resp.PartialContent,
 	}, nil
 }

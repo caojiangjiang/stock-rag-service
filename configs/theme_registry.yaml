@@ -1,0 +1,28 @@
+# 投资主题注册表：通过标签匹配 universe 中的股票，也可额外指定 symbol
+themes:
+  - id: ai
+    name: AI人工智能
+    match_tags: ["AI", "AI芯片", "人工智能"]
+    benchmark_cn: "000300"
+    benchmark_us: "SPY"
+
+  - id: embodied_ai
+    name: 具身智能
+    match_tags: ["机器人", "具身智能", "人形机器人", "自动驾驶"]
+    extra_symbols:
+      cn: ["300024", "688169", "002594"]
+      us: ["TSLA"]
+    benchmark_cn: "000300"
+    benchmark_us: "SPY"
+
+  - id: semiconductor
+    name: 半导体
+    match_tags: ["半导体", "半导体设备", "芯片", "GPU", "CPU"]
+    benchmark_cn: "000300"
+    benchmark_us: "SPY"
+
+  - id: new_energy
+    name: 新能源
+    match_tags: ["新能源", "锂电池", "光伏", "新能源汽车", "电动车"]
+    benchmark_cn: "000300"
+    benchmark_us: "SPY"

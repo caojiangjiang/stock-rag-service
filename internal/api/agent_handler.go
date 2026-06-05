@@ -95,19 +95,83 @@ func (h *AgentHandler) ExecuteTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	auditRequestEvent(r, "agent.execute", "success", "user_id", userID, "conversation_id", conversationID, "stock_code", stockCode)
-	// 返回响应
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	resp := struct {
-		Result         string `json:"result"`
-		ConversationID string `json:"conversation_id"`
-	}{
-		Result:         result.Content,
-		ConversationID: conversationID,
-	}
-	if err := json.NewEncoder(w).Encode(resp); err != nil {
+	writeAgentTaskResponse(w, conversationID, result)
+}
+
+// ResumeAgent 从 HITL 中断点恢复 Agent 执行。
+func (h *AgentHandler) ResumeAgent(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+
+	ctx := r.Context()
+	userID := UserIDFromRequest(ctx)
+
+	var req struct {
+		ConversationID string      `json:"conversation_id"`
+		CheckPointID   string      `json:"checkpoint_id"`
+		InterruptID    string      `json:"interrupt_id"`
+		ResumeData     interface{} `json:"resume_data"`
+	}
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&req); err != nil {
+		http.Error(w, "invalid request body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	req.ConversationID = strings.TrimSpace(req.ConversationID)
+	req.CheckPointID = strings.TrimSpace(req.CheckPointID)
+	req.InterruptID = strings.TrimSpace(req.InterruptID)
+	if req.CheckPointID == "" || req.InterruptID == "" {
+		http.Error(w, "checkpoint_id and interrupt_id are required", http.StatusBadRequest)
+		return
+	}
+
+	result, err := h.taskAgentService.ResumeComplexTask(ctx, &service.ResumeComplexTaskRequest{
+		ConversationID: req.ConversationID,
+		CheckPointID:   req.CheckPointID,
+		InterruptID:    req.InterruptID,
+		ResumeData:     req.ResumeData,
+		UserID:         userID,
+	})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if result.Error != "" {
+		http.Error(w, result.Error, http.StatusInternalServerError)
+		return
+	}
+
+	writeAgentTaskResponse(w, req.ConversationID, result)
+}
+
+func writeAgentTaskResponse(w http.ResponseWriter, conversationID string, result *service.ComplexTaskResponse) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	resp := AgentTaskResponse{
+		Result:         result.Content,
+		ConversationID: conversationID,
+		AwaitingHuman:  result.AwaitingHuman,
+		CheckPointID:   result.CheckPointID,
+		InterruptID:    result.InterruptID,
+		InterruptInfo:  result.InterruptInfo,
+		PartialContent: result.PartialContent,
+	}
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
+// AgentTaskResponse Agent 任务执行/恢复响应（含 HITL 字段）。
+type AgentTaskResponse struct {
+	Result         string `json:"result"`
+	ConversationID string `json:"conversation_id,omitempty"`
+	AwaitingHuman  bool   `json:"awaiting_human,omitempty"`
+	CheckPointID   string `json:"checkpoint_id,omitempty"`
+	InterruptID    string `json:"interrupt_id,omitempty"`
+	InterruptInfo  string `json:"interrupt_info,omitempty"`
+	PartialContent string `json:"partial_content,omitempty"`
 }
 
 // AnalyzeStock 分析股票（使用 Supervisor + Specialists 架构）

@@ -211,7 +211,7 @@ func (s *ConfigPersonaService) chatDirect(
 	requestID string,
 	startTime time.Time,
 ) (*model.PersonaAnswer, error) {
-	systemPrompt := promptBuilder.BuildPersonaSystemPrompt() + "\n当前为角色对话模式，未检索实时公告/研报；请结合角色框架与公开逻辑分析，勿编造具体数据，勿给出买卖建议。"
+	systemPrompt := promptBuilder.BuildPersonaSystemPrompt() + "\n当前为角色对话模式，未检索实时公告/研报；请结合角色框架与公开逻辑分析，勿编造具体数据；用户若询问推荐或买卖方向，请给出明确观点与理由。"
 
 	directAnswer, err := generatePersonaDirectAnswer(ctx, systemPrompt, req.Message)
 	if err != nil {
@@ -753,12 +753,11 @@ func hashString(s string) string {
 	return strconv.FormatUint(h.Sum64(), 16)
 }
 
-// checkSafety 检查问题是否包含安全敏感内容
-// 返回非空字符串表示拒绝原因，空字符串表示通过检查
+// checkSafety 检查问题是否包含安全敏感内容（不含正常投研/荐股类提问）。
+// 返回非空字符串表示拒绝原因，空字符串表示通过检查。
 func checkSafety(question string) string {
-	// 安全敏感关键词列表
 	sensitiveKeywords := []string{
-		"赚钱", "收益", "稳赚", "必赚", "内幕消息", "操纵市场",
+		"内幕消息", "操纵市场",
 		"违法", "违规", "诈骗", "骗局", "传销", "洗钱",
 		"政治", "领导人", "敏感", "反动", "颠覆", "分裂",
 		"色情", "暴力", "恐怖", "血腥", "毒品", "赌博",

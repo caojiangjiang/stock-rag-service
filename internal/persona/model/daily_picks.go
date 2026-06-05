@@ -79,14 +79,14 @@ type RunResult struct {
 
 // CandidateStock 候选股票
 type CandidateStock struct {
-	Symbol       string   `json:"symbol"`
-	CompanyName  string   `json:"company_name"`
-	Market       string   `json:"market"`
-	SectorTags   []string `json:"sector_tags"`
+	Symbol      string   `yaml:"symbol" json:"symbol"`
+	CompanyName string   `yaml:"company_name" json:"company_name"`
+	Market      string   `yaml:"market" json:"market"`
+	SectorTags  []string `yaml:"sector_tags" json:"sector_tags"`
 }
 
 // UniverseConfig 候选池配置
 type UniverseConfig struct {
-	US []CandidateStock `json:"us"`
-	CN []CandidateStock `json:"cn"`
+	US []CandidateStock `yaml:"us" json:"us"`
+	CN []CandidateStock `yaml:"cn" json:"cn"`
 }

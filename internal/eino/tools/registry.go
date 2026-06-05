@@ -95,6 +95,9 @@ func (r *ToolRegistry) Invoke(ctx context.Context, name string, args map[string]
 
 	toolName := FormatToolName(name)
 	return r.guard.Run(ctx, toolName, func(callCtx context.Context) (string, error) {
+		if err := GateToolInvocation(callCtx, toolName, args); err != nil {
+			return "", err
+		}
 		if info.IsTyped {
 			if info.TypedInstance == nil {
 				return "", fmt.Errorf("工具 %s 未绑定强类型实例", toolName)

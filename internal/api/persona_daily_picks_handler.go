@@ -101,7 +101,7 @@ func buildResponse(picks *model.DailyPicks) *model.DailyPicksResponse {
 		},
 		Picks:       picks.Stocks,
 		GeneratedAt: picks.GeneratedAt,
-		Disclaimer:  "基于公开资料生成，仅供研究辅助，不构成投资建议",
+		Disclaimer:  "基于公开资料生成，投资有风险，请结合自身情况独立决策。",
 		Market:      picks.Market,
 		TotalCount:  len(picks.Stocks),
 	}

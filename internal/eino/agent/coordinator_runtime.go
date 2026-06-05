@@ -164,13 +164,13 @@ func (rt *CoordinatorRuntime) recordSubtask(
 	metrics.RecordAgentStep(rt.CoordinatorName, subtaskName, statusStr, time.Since(start).Seconds())
 }
 
-// ProcessADKIterator 统一处理 ADK 事件流，记录子 Agent 步骤与指标。
+// ProcessADKIterator 统一处理 ADK 事件流，记录子 Agent 步骤与指标；支持 HITL 中断。
 func (rt *CoordinatorRuntime) ProcessADKIterator(
 	ctx context.Context,
 	taskState *TaskState,
 	iterator *adk.AsyncIterator[*adk.AgentEvent],
-) (string, error) {
-	var finalResult string
+) (*ADKProcessResult, error) {
+	result := &ADKProcessResult{}
 
 	for {
 		event, ok := iterator.Next()
@@ -187,7 +187,15 @@ func (rt *CoordinatorRuntime) ProcessADKIterator(
 			rt.recordSubtask(taskState, agentName, TaskStatusFailed, "", event.Err.Error(), time.Now())
 			metrics.RecordAgentSubtask(rt.CoordinatorName, agentName, "error", 0)
 			taskState.AddError(fmt.Sprintf("[%s] %v", agentName, event.Err))
-			return finalResult, event.Err
+			return result, event.Err
+		}
+
+		if event.Action != nil && event.Action.Interrupted != nil {
+			interrupt := extractInterruptInfo(taskState, result.Content, event)
+			taskState.UpdateStatus(TaskStatusAwaitingHuman)
+			taskState.CreateCheckpoint(interrupt.ID)
+			result.Interrupt = interrupt
+			return result, nil
 		}
 
 		if event.Output != nil && event.Output.MessageOutput != nil {
@@ -196,12 +204,11 @@ func (rt *CoordinatorRuntime) ProcessADKIterator(
 				continue
 			}
 			content := msg.Content
-			finalResult += content
+			result.Content += content
 
-			// 如果有流式回调，立即推送内容
 			if taskState.OnChunk != nil && content != "" {
 				if err := taskState.OnChunk(content); err != nil {
-					return finalResult, err
+					return result, err
 				}
 			}
 
@@ -221,7 +228,25 @@ func (rt *CoordinatorRuntime) ProcessADKIterator(
 		}
 	}
 
-	return finalResult, nil
+	return result, nil
+}
+
+func extractInterruptInfo(taskState *TaskState, partial string, event *adk.AgentEvent) *InterruptInfo {
+	if event == nil || event.Action == nil || event.Action.Interrupted == nil {
+		return nil
+	}
+	contexts := event.Action.Interrupted.InterruptContexts
+	if len(contexts) == 0 {
+		return nil
+	}
+	ctx0 := contexts[0]
+	return &InterruptInfo{
+		ID:            ctx0.ID,
+		CheckPointID:  EnsureCheckPointID(taskState),
+		Info:          fmt.Sprintf("%v", ctx0.Info),
+		Address:       ctx0.Address.String(),
+		PartialResult: partial,
+	}
 }
 
 func eventAgentName(event *adk.AgentEvent) string {

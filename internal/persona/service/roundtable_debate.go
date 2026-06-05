@@ -62,7 +62,7 @@ func (g *personaDebateGenerator) GenerateArgument(
 		}
 	} else {
 		systemPrompt := promptBuilder.BuildPersonaSystemPrompt() +
-			"\n你正在参加投资圆桌辩论：请坚持本角色投资框架，用中文发言；可支持或反驳其他参与者，但不要编造具体财报数据；不要给出买卖建议。"
+			"\n你正在参加投资圆桌辩论：请坚持本角色投资框架，用中文发言；可支持或反驳其他参与者，但不要编造具体财报数据；可给出明确看好/看空观点及标的推荐。"
 		text, err = generatePersonaDirectAnswer(ctx, systemPrompt, userMsg)
 	}
 

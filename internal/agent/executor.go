@@ -37,15 +37,20 @@ type ExecuteRequest struct {
 }
 
 type ExecuteResponse struct {
-	MessageID    string
-	Content      string
-	Mode         router.RouteMode
-	InputTokens  int
-	OutputTokens int
-	LatencyMs    int
-	Citations    []Citation
-	ToolCalls    []ToolCallInfo
-	Error        string
+	MessageID      string
+	Content        string
+	Mode           router.RouteMode
+	InputTokens    int
+	OutputTokens   int
+	LatencyMs      int
+	Citations      []Citation
+	ToolCalls      []ToolCallInfo
+	Error          string
+	AwaitingHuman  bool
+	CheckPointID   string
+	InterruptID    string
+	InterruptInfo  string
+	PartialContent string
 }
 
 type Citation struct {

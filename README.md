@@ -325,7 +325,7 @@ curl -X POST http://localhost:8080/api/personas/roundtable \
 }'
 ```
 
-### Step 4: 测试安全合规拦截
+### Step 4: 测试荐股与观点输出
 ```bash
 curl -X POST http://localhost:8080/api/personas/chat \
   -H "Content-Type: application/json" \
@@ -352,7 +352,7 @@ python3 eval/persona_eval_runner.py --rules-only --dry-run
 | **Risks（风险）** | 潜在风险因素 | 市场风险、政策风险等 |
 | **Counter View（反方）** | 对立视角分析 | 反驳观点及理由 |
 | **Evidence（证据）** | 引用来源列表 | 财报、公告、新闻 |
-| **Disclaimer（声明）** | 合规免责声明 | 不构成投资建议 |
+| **Disclaimer（声明）** | 风险提示 | 投资有风险，请独立决策 |
 
 ### Watchlist 问答
 支持针对用户关注股票列表的批量分析：
@@ -382,12 +382,11 @@ curl -X POST http://localhost:8080/api/personas/chat \
 
 ## ⚠️ 风险声明
 
-**Investment Persona 仅供研究辅助目的使用，不构成投资建议。**
+**Investment Persona 基于公开信息与角色框架生成分析观点，投资有风险，请结合自身情况独立决策。**
 
 - 本系统提供的分析基于公开信息，不保证准确性和时效性；
 - 投资决策应基于个人独立判断和专业顾问意见；
-- 市场有风险，投资需谨慎；
-- 本系统不提供荐股服务，不保证任何投资收益。
+- 市场有风险，投资需谨慎。
 
 ## 评估结果
 

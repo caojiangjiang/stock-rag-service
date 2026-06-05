@@ -160,7 +160,7 @@ func (s *MockPersonaService) Chat(ctx context.Context, req *model.PersonaChatReq
 			Summary:     "当前估值已充分反映乐观预期，建议保持谨慎。",
 		},
 		Citations: []model.EvidenceItem{},
-		Disclaimer: "以上内容仅供研究交流，不构成投资建议。",
+		Disclaimer: "以上观点基于角色框架与公开信息，投资有风险，请结合自身情况独立决策。",
 		RequestID: "persona-chat-mock-001",
 	}, nil
 }

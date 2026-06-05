@@ -17,8 +17,10 @@ import (
 	"stock_rag/internal/metrics"
 	personaservice "stock_rag/internal/persona/service"
 	"stock_rag/internal/pkg/httpmiddleware"
+	"stock_rag/internal/portfolio"
 	"stock_rag/internal/repository"
 	"stock_rag/internal/service"
+	"stock_rag/internal/theme"
 )
 
 // Route 描述第一版计划暴露的接口。
@@ -29,7 +31,7 @@ type Route struct {
 }
 
 // NewRouter 注册当前已经接通的 HTTP 路由。
-func NewRouter(querySvc QueryService, taskAgentService *service.TaskAgentService, authService auth.AuthService, jwtSecret string, chatService *agent.ChatService, conversationStore repository.UnifiedConversationStore, postgresDB Pinger, redisClient *redis.Client, coordinatorFactory *einoagent.CoordinatorFactory) *http.ServeMux {
+func NewRouter(querySvc QueryService, taskAgentService *service.TaskAgentService, authService auth.AuthService, jwtSecret string, chatService *agent.ChatService, conversationStore repository.UnifiedConversationStore, postgresDB Pinger, redisClient *redis.Client, coordinatorFactory *einoagent.CoordinatorFactory, portfolioSvc *portfolio.Service, themeSvc *theme.Service) *http.ServeMux {
 	mux := http.NewServeMux()
 
 	// 健康检查端点
@@ -75,6 +77,7 @@ func NewRouter(querySvc QueryService, taskAgentService *service.TaskAgentService
 	mux.HandleFunc("/api/agent/execute", requireAuth(agentHandler.ExecuteTask))
 	mux.HandleFunc("/api/agent/analyze-stock", requireAuth(agentHandler.AnalyzeStock))
 	mux.HandleFunc("/api/agent/run", requireAuth(agentHandler.RunAgent))
+	mux.HandleFunc("/api/agent/resume", requireAuth(agentHandler.ResumeAgent))
 	mux.HandleFunc("/api/agent/session", requireAuth(agentHandler.GetSession))
 
 	chatHandler := NewChatHandler(chatService)
@@ -95,6 +98,23 @@ func NewRouter(querySvc QueryService, taskAgentService *service.TaskAgentService
 	mux.HandleFunc("/api/conversations/delete", requireAuth(convHandler.DeleteConversation))
 
 	RegisterAuthRoutes(mux, authService, jwtSecret)
+
+	// 个人持仓
+	if portfolioSvc != nil {
+		portfolioHandler := NewPortfolioHandler(portfolioSvc)
+		mux.HandleFunc("/api/portfolio/positions", requireAuth(portfolioHandler.HandlePositions))
+		mux.HandleFunc("/api/portfolio/summary", requireAuth(portfolioHandler.Summary))
+		mux.HandleFunc("/api/portfolio/import/fund", requireAuth(portfolioHandler.ImportFund))
+	}
+
+	marketHandler := NewMarketHandler()
+	mux.HandleFunc("/api/market/fund/nav", requireAuth(marketHandler.FundNAV))
+
+	// 主题快照
+	if themeSvc != nil {
+		themeHandler := NewThemeHandler(themeSvc)
+		mux.HandleFunc("/api/themes/snapshot", requireAuth(themeHandler.Snapshot))
+	}
 
 	// Investment Persona 模块路由
 	enablePersonaModule := strings.EqualFold(strings.TrimSpace(os.Getenv("ENABLE_PERSONA_MODULE")), "true")

@@ -21,6 +21,7 @@ services:
       - POSTGRES_DB=stock_rag
       - ARK_API_KEY=${ARK_API_KEY}
       - ARK_MODEL=${ARK_MODEL}
+      - ENABLE_TOOL_HITL=true
     depends_on:
       redis:
         condition: service_healthy
