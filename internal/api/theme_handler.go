@@ -28,8 +28,16 @@ func (h *ThemeHandler) Snapshot(w http.ResponseWriter, r *http.Request) {
 
 	themeID := strings.TrimSpace(r.URL.Query().Get("theme"))
 	market := strings.TrimSpace(r.URL.Query().Get("market"))
+	forceRefresh := strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("refresh")), "true") ||
+		r.URL.Query().Get("refresh") == "1"
 
-	resp, err := h.svc.Snapshot(r.Context(), themeID, market)
+	var resp *theme.SnapshotResponse
+	var err error
+	if forceRefresh {
+		resp, err = h.svc.RefreshSnapshot(r.Context(), themeID, market)
+	} else {
+		resp, err = h.svc.Snapshot(r.Context(), themeID, market)
+	}
 	if err != nil {
 		if themeID != "" {
 			http.Error(w, err.Error(), http.StatusNotFound)

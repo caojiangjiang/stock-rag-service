@@ -1,13 +1,19 @@
-# 投资主题注册表：通过标签匹配 universe 中的股票，也可额外指定 symbol
+# 投资主题注册表
+# - eastmoney_board_cn: 东方财富概念板块代码（优先拉成分）
+# - match_tags / extra_symbols: 兜底与美股补充
 themes:
   - id: ai
     name: AI人工智能
-    match_tags: ["AI", "AI芯片", "人工智能"]
+    eastmoney_board_cn: "BK0800"
+    eastmoney_board_name_cn: "人工智能"
+    match_tags: ["AI", "AI芯片", "人工智能", "EDA软件"]
     benchmark_cn: "000300"
     benchmark_us: "SPY"
 
   - id: embodied_ai
     name: 具身智能
+    eastmoney_board_cn: "BK1090"
+    eastmoney_board_name_cn: "机器人概念"
     match_tags: ["机器人", "具身智能", "人形机器人", "自动驾驶"]
     extra_symbols:
       cn: ["300024", "688169", "002594"]
@@ -17,12 +23,82 @@ themes:
 
   - id: semiconductor
     name: 半导体
-    match_tags: ["半导体", "半导体设备", "芯片", "GPU", "CPU"]
+    eastmoney_board_cn: "BK0917"
+    eastmoney_board_name_cn: "半导体概念"
+    match_tags: ["半导体", "半导体设备", "芯片", "GPU", "CPU", "存储", "模拟芯片"]
     benchmark_cn: "000300"
     benchmark_us: "SPY"
 
   - id: new_energy
     name: 新能源
-    match_tags: ["新能源", "锂电池", "光伏", "新能源汽车", "电动车"]
+    eastmoney_board_cn: "BK0493"
+    eastmoney_board_name_cn: "新能源"
+    match_tags: ["新能源", "锂电池", "新能源汽车", "电动车", "逆变器"]
+    benchmark_cn: "000300"
+    benchmark_us: "SPY"
+
+  - id: photovoltaics
+    name: 光伏
+    eastmoney_board_cn: "BK0588"
+    eastmoney_board_name_cn: "光伏概念"
+    match_tags: ["光伏"]
+    benchmark_cn: "000300"
+    benchmark_us: "SPY"
+
+  - id: healthcare
+    name: 医药健康
+    eastmoney_board_cn: "BK0727"
+    eastmoney_board_name_cn: "医疗服务"
+    match_tags: ["医疗", "制药", "医药", "医疗器械", "诊断", "生命科学"]
+    extra_symbols:
+      cn: ["600276", "300760"]
+    benchmark_cn: "000300"
+    benchmark_us: "SPY"
+
+  - id: biotech
+    name: 创新药
+    eastmoney_board_cn: "BK0698"
+    eastmoney_board_name_cn: "生物疫苗"
+    match_tags: ["创新药", "生物科技", "肿瘤", "疫苗", "免疫"]
+    benchmark_cn: "000300"
+    benchmark_us: "SPY"
+
+  - id: finance
+    name: 金融
+    eastmoney_board_cn: "BK0475"
+    eastmoney_board_name_cn: "银行"
+    match_tags: ["银行", "金融", "券商", "保险", "投行", "资管"]
+    benchmark_cn: "000300"
+    benchmark_us: "SPY"
+
+  - id: consumer
+    name: 大消费
+    eastmoney_board_cn: "BK0896"
+    eastmoney_board_name_cn: "白酒"
+    match_tags: ["消费", "白酒", "家电", "食品", "乳业", "餐饮", "服装"]
+    benchmark_cn: "000300"
+    benchmark_us: "SPY"
+
+  - id: high_dividend
+    name: 高股息
+    eastmoney_board_cn: "BK0521"
+    eastmoney_board_name_cn: "低市盈率"
+    match_tags: ["股息", "REIT"]
+    benchmark_cn: "000300"
+    benchmark_us: "SPY"
+
+  - id: cloud
+    name: 云计算
+    eastmoney_board_cn: "BK0579"
+    eastmoney_board_name_cn: "云计算"
+    match_tags: ["云", "SaaS", "软件", "数据库", "企业软件"]
+    benchmark_cn: "000300"
+    benchmark_us: "SPY"
+
+  - id: defense
+    name: 军工国防
+    eastmoney_board_cn: "BK0498"
+    eastmoney_board_name_cn: "军工"
+    match_tags: ["国防", "航空", "军工"]
     benchmark_cn: "000300"
     benchmark_us: "SPY"

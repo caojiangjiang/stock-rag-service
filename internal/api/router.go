@@ -109,6 +109,7 @@ func NewRouter(querySvc QueryService, taskAgentService *service.TaskAgentService
 
 	marketHandler := NewMarketHandler()
 	mux.HandleFunc("/api/market/fund/nav", requireAuth(marketHandler.FundNAV))
+	mux.HandleFunc("/api/market/stock/quote", requireAuth(marketHandler.StockQuote))
 
 	// 主题快照
 	if themeSvc != nil {

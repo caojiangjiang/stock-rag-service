@@ -87,6 +87,7 @@ func main() {
 	marketProvider := initMarketProvider()
 	portfolioSvc := initPortfolioService(ctx, pgConversationStore, marketProvider)
 	themeSvc := initThemeService(marketProvider)
+	themeSvc.StartBackgroundRefresh(ctx)
 	var pgPool api.Pinger
 	if pgConversationStore != nil {
 		pgPool = pgConversationStore.DB()

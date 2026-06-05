@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>主题快照 - Stock RAG</title>
+    <link rel="stylesheet" href="css/app.css?v=5">
+    <link rel="stylesheet" href="css/themes.css?v=2">
+</head>
+<body>
+    <div class="themes-page">
+        <div class="risk-banner">
+            <p>⚠️ 主题数据基于候选池与行情聚合，仅供研究参考，不构成投资建议。</p>
+        </div>
+
+        <div class="themes-container">
+            <header class="themes-header">
+                <div>
+                    <h1>主题快照</h1>
+                    <p>观察各投资赛道的热度、强弱与领涨成分（成分来自东财概念板块，行情来自东方财富）</p>
+                </div>
+                <a href="index.html" class="back-link">← 返回首页</a>
+            </header>
+
+            <div class="themes-toolbar">
+                <div class="themes-filter" id="market-filter">
+                    <button type="button" class="theme-filter-btn active" data-market="">全部市场</button>
+                    <button type="button" class="theme-filter-btn" data-market="cn">A股</button>
+                    <button type="button" class="theme-filter-btn" data-market="us">美股</button>
+                </div>
+                <div class="themes-as-of" id="as-of-wrap">
+                    <span id="as-of">更新中…</span>
+                    <span class="themes-cache-hint" id="cache-hint"></span>
+                    <button type="button" class="themes-refresh-btn" id="refresh-btn" title="强制从东财拉取最新数据">刷新</button>
+                </div>
+            </div>
+
+            <div class="themes-grid" id="themes-grid">
+                <div class="themes-empty">加载中…</div>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/auth.js"></script>
+    <script src="js/theme-api.js"></script>
+    <script>
+        const STATE_LABELS = {
+            overheated: '过热',
+            hot: '强势',
+            emerging: '萌芽',
+            cooling: '退潮',
+            neutral: '中性',
+        };
+
+        let activeMarket = '';
+        let allThemes = [];
+        let snapshotMeta = null;
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            const ok = await Auth.ensureAuthenticated({ redirect: true });
+            if (!ok) return;
+
+            document.getElementById('market-filter').addEventListener('click', (e) => {
+                const btn = e.target.closest('.theme-filter-btn');
+                if (!btn) return;
+                activeMarket = btn.dataset.market || '';
+                document.querySelectorAll('.theme-filter-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                applyMarketFilter();
+            });
+
+            document.getElementById('refresh-btn').addEventListener('click', () => loadThemes(true));
+
+            await loadThemes(false);
+        });
+
+        function applyMarketFilter() {
+            const filtered = activeMarket
+                ? allThemes.filter(t => t.market === activeMarket)
+                : allThemes;
+            renderThemes(filtered);
+        }
+
+        async function loadThemes(forceRefresh) {
+            const grid = document.getElementById('themes-grid');
+            const refreshBtn = document.getElementById('refresh-btn');
+            grid.innerHTML = '<div class="themes-empty">加载中…</div>';
+            refreshBtn.disabled = true;
+            try {
+                const resp = await ThemeAPI.getSnapshot({
+                    refresh: forceRefresh || undefined,
+                });
+                snapshotMeta = resp;
+                allThemes = resp.themes || [];
+                updateMeta(resp);
+                applyMarketFilter();
+            } catch (err) {
+                grid.innerHTML = `<div class="themes-error"><h3>加载失败</h3><p>${escapeHtml(err.message)}</p></div>`;
+            } finally {
+                refreshBtn.disabled = false;
+            }
+        }
+
+        function updateMeta(resp) {
+            const asOfEl = document.getElementById('as-of');
+            const hintEl = document.getElementById('cache-hint');
+            asOfEl.textContent = resp.as_of
+                ? `快照时间：${formatTime(resp.as_of)}`
+                : '';
+            if (resp.cached && resp.cache_age_sec != null) {
+                const mins = Math.floor(resp.cache_age_sec / 60);
+                const secs = resp.cache_age_sec % 60;
+                const age = mins > 0 ? `${mins} 分 ${secs} 秒前` : `${secs} 秒前`;
+                hintEl.textContent = `（缓存 · ${age}更新，切换市场不重复请求）`;
+            } else {
+                hintEl.textContent = '（刚刷新）';
+            }
+        }
+
+        function renderThemes(themes) {
+            const grid = document.getElementById('themes-grid');
+            if (!themes.length) {
+                grid.innerHTML = '<div class="themes-empty"><h3>暂无主题数据</h3><p>请检查主题配置或候选池</p></div>';
+                return;
+            }
+
+            grid.innerHTML = themes.map(t => {
+                const state = t.state || 'neutral';
+                const marketLabel = t.market === 'us' ? '美股' : 'A股';
+                const top = (t.top_gainers || []).slice(0, 5).map(s => `
+                    <li>
+                        <span><span class="sym">${escapeHtml(s.symbol)}</span><span class="name">${escapeHtml(s.company_name || '')}</span></span>
+                        <span class="chg ${pnlClass(s.change_percent)}">${formatPct(s.change_percent)}</span>
+                    </li>`).join('');
+
+                return `
+                    <article class="theme-card">
+                        <div class="theme-card-header">
+                            <div>
+                                <h3>${escapeHtml(t.name || t.id)}</h3>
+                                <div class="theme-card-meta">${escapeHtml(t.id)} · ${marketLabel} · ${t.stock_count} 只成分</div>
+                            </div>
+                            <span class="state-badge ${state}">${STATE_LABELS[state] || state}</span>
+                        </div>
+                        <div class="theme-metrics">
+                            <div class="theme-metric">
+                                <div class="label">平均涨跌</div>
+                                <div class="value ${pnlClass(t.avg_change_pct)}">${formatPct(t.avg_change_pct)}</div>
+                            </div>
+                            <div class="theme-metric">
+                                <div class="label">上涨占比</div>
+                                <div class="value">${t.breadth_pct != null ? t.breadth_pct.toFixed(1) + '%' : '—'}</div>
+                            </div>
+                            <div class="theme-metric">
+                                <div class="label">相对基准</div>
+                                <div class="value ${pnlClass(t.rs_vs_benchmark)}">${formatPct(t.rs_vs_benchmark)}</div>
+                            </div>
+                            <div class="theme-metric">
+                                <div class="label">基准 ${escapeHtml(t.benchmark_code || '')}</div>
+                                <div class="value ${pnlClass(t.benchmark_change_pct)}">${formatPct(t.benchmark_change_pct)}</div>
+                            </div>
+                        </div>
+                        <p class="theme-top-title">领涨成分</p>
+                        <ul class="theme-top-list">${top || '<li>暂无行情</li>'}</ul>
+                    </article>`;
+            }).join('');
+        }
+
+        function formatPct(n) {
+            if (n == null || Number.isNaN(n)) return '—';
+            const prefix = n > 0 ? '+' : '';
+            return prefix + Number(n).toFixed(2) + '%';
+        }
+
+        function pnlClass(n) {
+            if (n > 0) return 'positive';
+            if (n < 0) return 'negative';
+            return '';
+        }
+
+        function formatTime(iso) {
+            try {
+                return new Date(iso).toLocaleString('zh-CN');
+            } catch {
+                return iso;
+            }
+        }
+
+        function escapeHtml(str) {
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;');
+        }
+    </script>
+</body>
+</html>

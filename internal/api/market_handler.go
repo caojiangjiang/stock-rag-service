@@ -31,3 +31,22 @@ func (h *MarketHandler) FundNAV(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, q)
 }
+
+func (h *MarketHandler) StockQuote(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	code := strings.TrimSpace(r.URL.Query().Get("code"))
+	if code == "" {
+		http.Error(w, "code is required", http.StatusBadRequest)
+		return
+	}
+	mkt := strings.TrimSpace(r.URL.Query().Get("market"))
+	q, err := market.LookupStockQuote(code, mkt)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	writeJSON(w, http.StatusOK, q)
+}

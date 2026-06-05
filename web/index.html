@@ -3,98 +3,79 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Stock RAG - 股票智能分析助手</title>
+    <title>Stock RAG - 投资工作台</title>
     <link rel="stylesheet" href="css/app.css?v=5">
+    <link rel="stylesheet" href="css/home.css?v=1">
 </head>
 <body>
-    <div class="app-shell">
-        <aside class="sidebar">
-            <div class="sidebar-brand">
+    <div class="home-page">
+        <header class="home-header">
+            <div class="home-brand">
                 <h1>Stock RAG</h1>
-                <p>智能股票分析助手</p>
+                <p>投资研究工作台</p>
             </div>
-            <div class="sidebar-actions">
-                <button type="button" class="btn btn-primary btn-block" id="new-chat-btn">
-                    <span>+</span> 新对话
-                </button>
-                <a href="personas.html" class="btn btn-secondary btn-block">
-                    👥 投资角色
-                </a>
-                <a href="persona-daily-picks.html" class="btn btn-secondary btn-block">
-                    📊 选股推荐
-                </a>
-                <a href="portfolio.html" class="btn btn-secondary btn-block">
-                    💼 我的持仓
-                </a>
-                <div class="monitor-dropdown">
-                    <button type="button" class="btn btn-ghost btn-block" id="monitor-btn">
-                        📊 监控面板 ▼
-                    </button>
-                    <div class="monitor-menu" id="monitor-menu">
-                        <a href="http://localhost:3000" target="_blank" class="monitor-item">
-                            <span class="monitor-icon">📈</span>
-                            <div class="monitor-info">
-                                <span class="monitor-name">Grafana</span>
-                                <span class="monitor-desc">监控仪表盘</span>
-                            </div>
-                        </a>
-                        <a href="http://localhost:9091" target="_blank" class="monitor-item">
-                            <span class="monitor-icon">📉</span>
-                            <div class="monitor-info">
-                                <span class="monitor-name">Prometheus</span>
-                                <span class="monitor-desc">指标收集系统</span>
-                            </div>
-                        </a>
-                        <a href="http://localhost:16686" target="_blank" class="monitor-item">
-                            <span class="monitor-icon">🔍</span>
-                            <div class="monitor-info">
-                                <span class="monitor-name">Jaeger</span>
-                                <span class="monitor-desc">链路追踪</span>
-                            </div>
-                        </a>
-                    </div>
-                </div>
+            <div class="home-user">
+                <div class="user-avatar" id="user-avatar">U</div>
+                <span id="username-display"></span>
+                <button type="button" class="btn btn-ghost" id="logout-btn">退出</button>
             </div>
-            <div class="conversations-list" id="conversations-list"></div>
-        </aside>
+        </header>
 
-        <main class="main-panel">
-            <header class="topbar">
-                <h2 class="topbar-title" id="current-conversation-title">新对话</h2>
-                <div class="topbar-user">
-                    <div class="user-avatar" id="user-avatar">U</div>
-                    <span id="username-display"></span>
-                    <button type="button" class="btn btn-ghost" id="logout-btn">退出</button>
-                </div>
-            </header>
+        <main class="home-main">
+            <section class="home-hero">
+                <h2>选择功能模块</h2>
+                <p>主题观察、持仓管理、角色分析与智能对话，一站入口</p>
+            </section>
 
-            <div class="chat-scroll" id="chat-container">
-                <div class="empty-state" id="empty-state">
-                    <div class="empty-state-icon">📈</div>
-                    <h3>开始新对话</h3>
-                    <p>点击左侧「新对话」开始，或选择历史会话继续交流</p>
-                </div>
+            <div class="module-grid">
+                <a href="chat.html" class="module-card primary">
+                    <div class="module-icon">💬</div>
+                    <h3>智能对话</h3>
+                    <p>基于 RAG 的股票问答，支持流式输出与多轮会话</p>
+                    <span class="module-tag">核心功能</span>
+                </a>
+                <a href="themes.html" class="module-card">
+                    <div class="module-icon">🔥</div>
+                    <h3>主题快照</h3>
+                    <p>AI、半导体、医药等赛道热度、强弱与领涨股一览</p>
+                    <span class="module-tag">赛道观察</span>
+                </a>
+                <a href="portfolio.html" class="module-card">
+                    <div class="module-icon">💼</div>
+                    <h3>我的持仓</h3>
+                    <p>股票与基金持仓管理，支持从 App 快捷导入</p>
+                    <span class="module-tag">个人资产</span>
+                </a>
+                <a href="personas.html" class="module-card">
+                    <div class="module-icon">👥</div>
+                    <h3>投资角色</h3>
+                    <p>成长、价值、动量等不同风格专家视角</p>
+                    <span class="module-tag">多角色</span>
+                </a>
+                <a href="persona-daily-picks.html" class="module-card">
+                    <div class="module-icon">📊</div>
+                    <h3>选股推荐</h3>
+                    <p>按投资风格生成的每日观察名单</p>
+                    <span class="module-tag">每日更新</span>
+                </a>
             </div>
 
-            <footer class="composer">
-                <div class="composer-inner">
-                    <textarea id="message-input" rows="1" placeholder="输入股票相关问题…"></textarea>
-                    <button type="button" class="send-button" id="send-button" title="发送">→</button>
-                </div>
-                <p class="composer-hint">Enter 发送，Shift+Enter 换行 | 流式响应</p>
-            </footer>
+            <p class="home-footer">风险提示：数据仅供研究参考，不构成投资建议</p>
         </main>
     </div>
 
-    <script src="js/vendor/marked.min.js?v=4"></script>
-    <script src="js/vendor/purify.min.js?v=4"></script>
-    <script src="js/markdown.js?v=4"></script>
     <script src="js/auth.js"></script>
-    <script src="js/chat-app.js?v=4"></script>
     <script>
         document.addEventListener('DOMContentLoaded', async () => {
             const ok = await Auth.ensureAuthenticated({ redirect: true });
-            if (ok) await ChatApp.init();
+            if (!ok) return;
+            const user = Auth.getUser();
+            if (user) {
+                document.getElementById('username-display').textContent = user.username || user.email || '';
+                const initial = (user.username || user.email || 'U').charAt(0).toUpperCase();
+                document.getElementById('user-avatar').textContent = initial;
+            }
+            document.getElementById('logout-btn').addEventListener('click', () => Auth.logout());
         });
     </script>
 </body>

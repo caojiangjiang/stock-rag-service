@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 )
 
 func TestFetchFundNAVFromEastMoney_Parse(t *testing.T) {
@@ -66,7 +67,8 @@ func TestLiveProvider_GetFundNAV_Cache(t *testing.T) {
 	t.Cleanup(func() { eastMoneyFundInfoURL = old })
 
 	p := NewLiveProvider()
-	p.ttl = 60 * 1e9 // 1 minute
+	p.ttl = time.Minute
+	p.fundTTL = time.Minute
 	q1 := p.GetFundNAV("003095")
 	q2 := p.GetFundNAV("003095")
 	if !q1.HasQuote || !q2.HasQuote {
