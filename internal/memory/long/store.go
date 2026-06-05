@@ -74,6 +74,7 @@ type Store interface {
 	Save(ctx context.Context, memory *UserMemory) error
 	UpdatePreferences(ctx context.Context, userID string, prefs *UserPreferences) error
 	AddInsight(ctx context.Context, userID string, insight *Insight) error
+	DeleteInsight(ctx context.Context, userID, insightID string) error
 	// BatchAddInsights 批量添加洞察，用于会话结束时的记忆沉淀
 	BatchAddInsights(ctx context.Context, userID string, insights []*Insight) error
 	SearchInsights(ctx context.Context, userID string, query string, limit int) ([]*Insight, error)

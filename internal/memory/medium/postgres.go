@@ -3,10 +3,12 @@ package medium
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
-	"github.com/jackc/pgx/v4/pgxpool"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // PostgresStore implements Store using PostgreSQL JSONB.
@@ -97,7 +99,7 @@ func (s *PostgresStore) Get(ctx context.Context, conversationID string) (*Sessio
 		SELECT context, expires_at FROM %s WHERE conversation_id = $1
 	`, TableName), conversationID).Scan(&contextJSON, &expiresAt)
 	if err != nil {
-		if err.Error() == "no rows in result set" {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
 		}
 		return nil, err

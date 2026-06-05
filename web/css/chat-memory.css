@@ -1,0 +1,83 @@
+.session-memory-panel {
+  border-top: 1px solid var(--border-subtle);
+  padding: 12px 16px 16px;
+  max-height: 220px;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+}
+
+.session-memory-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.session-memory-header h3 {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.session-memory-link {
+  font-size: 0.75rem;
+  color: var(--text-disabled);
+}
+
+.session-memory-link:hover {
+  color: var(--accent-primary);
+}
+
+.session-memory-body {
+  overflow-y: auto;
+  flex: 1;
+  font-size: 0.8rem;
+}
+
+.session-memory-body::-webkit-scrollbar {
+  width: 4px;
+}
+
+.session-memory-body::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 2px;
+}
+
+.session-memory-empty {
+  color: var(--text-disabled);
+  line-height: 1.5;
+  font-size: 0.78rem;
+}
+
+.session-fact {
+  padding: 8px 10px;
+  margin-bottom: 6px;
+  border-radius: var(--radius-md);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-subtle);
+}
+
+.session-fact-key {
+  font-weight: 500;
+  color: var(--text-primary);
+  font-size: 0.78rem;
+}
+
+.session-fact-value {
+  margin-top: 4px;
+  color: var(--text-muted);
+  word-break: break-word;
+}
+
+.session-objects {
+  margin-top: 8px;
+  font-size: 0.75rem;
+  color: var(--text-disabled);
+}
+
+.session-objects span {
+  color: var(--accent-secondary);
+}

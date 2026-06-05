@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>用户画像 - Stock RAG</title>
+    <link rel="stylesheet" href="css/app.css?v=5">
+    <link rel="stylesheet" href="css/profile.css?v=2">
+</head>
+<body>
+    <div class="profile-page">
+        <div class="profile-container">
+            <header class="profile-header">
+                <div>
+                    <h1>用户画像</h1>
+                    <p>长期偏好、历史洞察与持仓摘要 — 让对话更懂你</p>
+                </div>
+                <div class="profile-toolbar">
+                    <a href="index.html" class="btn btn-ghost">← 首页</a>
+                    <a href="chat.html" class="btn btn-secondary">智能对话</a>
+                </div>
+            </header>
+
+            <div class="profile-status" id="status-bar"></div>
+            <div id="content"><div class="profile-empty">加载中…</div></div>
+        </div>
+    </div>
+    <div class="profile-toast" id="toast"></div>
+
+    <script src="js/auth.js"></script>
+    <script src="js/memory-api.js?v=1"></script>
+    <script>
+        const DETAIL_LABELS = { brief: '简洁', normal: '标准', detail: '详细' };
+        const RISK_LABELS = { high: '激进', medium: '均衡', low: '保守' };
+
+        let profile = null;
+
+        function showToast(msg) {
+            const el = document.getElementById('toast');
+            el.textContent = msg;
+            el.classList.add('show');
+            setTimeout(() => el.classList.remove('show'), 2500);
+        }
+
+        function escapeHtml(text) {
+            const d = document.createElement('div');
+            d.textContent = text == null ? '' : String(text);
+            return d.innerHTML;
+        }
+
+        function formatPct(v) {
+            if (v == null || Number.isNaN(v)) return '—';
+            const sign = v >= 0 ? '+' : '';
+            return sign + v.toFixed(2) + '%';
+        }
+
+        function renderStatusBar(p) {
+            const bar = document.getElementById('status-bar');
+            bar.innerHTML = `
+                <span class="status-pill ${p.long_term_enabled ? 'on' : ''}">长期记忆 ${p.long_term_enabled ? '已启用' : '未启用'}</span>
+                <span class="status-pill ${p.medium_term_enabled ? 'on' : ''}">中期记忆 ${p.medium_term_enabled ? '已启用' : '未启用'}</span>
+            `;
+        }
+
+        function renderProfile(p) {
+            profile = p;
+            renderStatusBar(p);
+            const prefs = p.preferences || {};
+            const portfolio = p.portfolio;
+            const insights = p.insights || [];
+
+            const portfolioHtml = portfolio ? `
+                <div class="portfolio-stats">
+                    <div class="stat-item"><div class="stat-label">持仓数</div><div class="stat-value">${portfolio.position_count}</div></div>
+                    <div class="stat-item"><div class="stat-label">总市值</div><div class="stat-value">${portfolio.total_value?.toFixed?.(0) ?? portfolio.total_value}</div></div>
+                    <div class="stat-item"><div class="stat-label">浮动盈亏</div><div class="stat-value">${formatPct(portfolio.unrealized_pnl_pct)}</div></div>
+                    <div class="stat-item"><div class="stat-label">有论点持仓</div><div class="stat-value">${portfolio.thesis_count ?? 0}</div></div>
+                </div>
+                ${portfolio.top_holdings?.length ? `<p style="margin-top:12px;font-size:0.85rem;color:var(--text-muted)">主要持仓：${portfolio.top_holdings.map(escapeHtml).join('、')}</p>` : ''}
+            ` : '<div class="profile-empty">暂无持仓数据</div>';
+
+            const insightsHtml = insights.length ? insights.map((ins) => `
+                <div class="insight-item" data-id="${escapeHtml(ins.insight_id)}">
+                    <div class="insight-body">
+                        <div class="insight-summary">${escapeHtml(ins.summary)}</div>
+                        <div class="insight-meta">${ins.created_at ? new Date(ins.created_at).toLocaleString() : ''}</div>
+                    </div>
+                    <button type="button" class="btn btn-ghost insight-delete" ${p.long_term_enabled ? '' : 'disabled'}>删除</button>
+                </div>
+            `).join('') : '<div class="profile-empty">暂无历史洞察。删除对话时会自动沉淀会话要点。</div>';
+
+            document.getElementById('content').innerHTML = `
+                <div class="profile-grid">
+                    <section class="profile-card">
+                        <h2>对话偏好</h2>
+                        <form id="prefs-form">
+                            <div class="form-row">
+                                <label for="detail-level">回答详略</label>
+                                <select id="detail-level" name="detail_level" ${p.long_term_enabled ? '' : 'disabled'}>
+                                    <option value="brief">简洁</option>
+                                    <option value="normal">标准</option>
+                                    <option value="detail">详细</option>
+                                </select>
+                            </div>
+                            <div class="form-row">
+                                <label for="risk-appetite">风险偏好</label>
+                                <select id="risk-appetite" name="risk_appetite" ${p.long_term_enabled ? '' : 'disabled'}>
+                                    <option value="low">保守</option>
+                                    <option value="medium">均衡</option>
+                                    <option value="high">激进</option>
+                                </select>
+                            </div>
+                            <div class="form-row">
+                                <label for="interaction-style">交互风格（可选）</label>
+                                <input id="interaction-style" name="interaction_style" type="text" placeholder="如：偏数据、偏叙事" ${p.long_term_enabled ? '' : 'disabled'} />
+                            </div>
+                            <div class="form-row">
+                                <label for="interested-stocks">关注标的（逗号分隔）</label>
+                                <input id="interested-stocks" name="interested_stocks" type="text" placeholder="600519, AAPL" ${p.long_term_enabled ? '' : 'disabled'} />
+                            </div>
+                            <div class="form-row">
+                                <label for="preferred-metrics">偏好指标（逗号分隔）</label>
+                                <input id="preferred-metrics" name="preferred_metrics" type="text" placeholder="PE, ROE, 营收增速" ${p.long_term_enabled ? '' : 'disabled'} />
+                            </div>
+                            <div class="profile-actions">
+                                <button type="submit" class="btn btn-primary" ${p.long_term_enabled ? '' : 'disabled'}>保存偏好</button>
+                            </div>
+                        </form>
+                        ${!p.long_term_enabled ? '<p class="profile-empty" style="padding:12px 0">需 PostgreSQL + 向量索引才能持久化偏好</p>' : ''}
+                    </section>
+
+                    <section class="profile-card">
+                        <h2>持仓摘要</h2>
+                        ${portfolioHtml}
+                    </section>
+
+                    <section class="profile-card full-width">
+                        <h2>历史洞察 <span style="font-weight:400;color:var(--text-muted);font-size:0.85rem">（${insights.length} 条）</span></h2>
+                        <div class="insight-list" id="insight-list">${insightsHtml}</div>
+                    </section>
+                </div>
+            `;
+
+            document.getElementById('detail-level').value = prefs.detail_level || 'normal';
+            document.getElementById('risk-appetite').value = prefs.risk_appetite || 'medium';
+            document.getElementById('interaction-style').value = prefs.interaction_style || '';
+            document.getElementById('interested-stocks').value = (prefs.interested_stocks || []).join(', ');
+            document.getElementById('preferred-metrics').value = (prefs.preferred_metrics || []).join(', ');
+
+            document.getElementById('prefs-form').addEventListener('submit', savePreferences);
+            document.getElementById('insight-list').addEventListener('click', onInsightClick);
+        }
+
+        function parseListInput(value) {
+            return String(value || '')
+                .split(/[,，、\s]+/)
+                .map((s) => s.trim())
+                .filter(Boolean);
+        }
+
+        async function savePreferences(e) {
+            e.preventDefault();
+            const body = {
+                detail_level: document.getElementById('detail-level').value,
+                risk_appetite: document.getElementById('risk-appetite').value,
+                interaction_style: document.getElementById('interaction-style').value.trim(),
+                interested_stocks: parseListInput(document.getElementById('interested-stocks').value),
+                preferred_metrics: parseListInput(document.getElementById('preferred-metrics').value),
+            };
+            try {
+                const updated = await MemoryAPI.updatePreferences(body);
+                renderProfile(updated);
+                showToast('偏好已保存');
+            } catch (err) {
+                showToast(err.message || '保存失败');
+            }
+        }
+
+        async function onInsightClick(e) {
+            const btn = e.target.closest('.insight-delete');
+            if (!btn) return;
+            const item = btn.closest('.insight-item');
+            const id = item?.dataset?.id;
+            if (!id || !confirm('确定删除这条洞察？')) return;
+            try {
+                await MemoryAPI.deleteInsight(id);
+                item.remove();
+                showToast('已删除');
+            } catch (err) {
+                showToast(err.message || '删除失败');
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            const ok = await Auth.ensureAuthenticated({ redirect: true });
+            if (!ok) return;
+            try {
+                const p = await MemoryAPI.getProfile();
+                renderProfile(p);
+            } catch (err) {
+                document.getElementById('content').innerHTML = `<div class="profile-empty">${escapeHtml(err.message)}</div>`;
+            }
+        });
+    </script>
+</body>
+</html>

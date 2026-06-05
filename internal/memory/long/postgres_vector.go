@@ -3,6 +3,7 @@ package long
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -11,7 +12,8 @@ import (
 	"stock_rag/internal/repository"
 	"stock_rag/internal/vectorstore"
 
-	"github.com/jackc/pgx/v4/pgxpool"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // PostgresVectorStore implements Store using PostgreSQL and a vector index.
@@ -84,7 +86,7 @@ func (s *PostgresVectorStore) Get(ctx context.Context, userID string) (*UserMemo
 		SELECT preferences, stock_pool, created_at, updated_at FROM %s WHERE user_id = $1
 	`, UserMemoryTable), userID).Scan(&preferencesJSON, &stockPool, &createdAt, &updatedAt)
 	if err != nil {
-		if strings.Contains(err.Error(), "no rows") {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
 		}
 		return nil, err
@@ -243,6 +245,22 @@ func (s *PostgresVectorStore) AddInsight(ctx context.Context, userID string, ins
 		insight.CreatedAt.Unix(),
 		0)
 	return err
+}
+
+func (s *PostgresVectorStore) DeleteInsight(ctx context.Context, userID, insightID string) error {
+	if insightID == "" || userID == "" {
+		return fmt.Errorf("insight_id and user_id required")
+	}
+	tag, err := s.db.Exec(ctx, fmt.Sprintf(`
+		DELETE FROM %s WHERE insight_id = $1 AND user_id = $2
+	`, InsightTable), insightID, userID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 func (s *PostgresVectorStore) SearchInsights(ctx context.Context, userID string, query string, limit int) ([]*Insight, error) {

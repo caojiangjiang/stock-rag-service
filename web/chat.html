@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>智能对话 - Stock RAG</title>
     <link rel="stylesheet" href="css/app.css?v=5">
+    <link rel="stylesheet" href="css/chat-memory.css?v=1">
 </head>
 <body>
     <div class="app-shell">
@@ -20,6 +21,15 @@
                 </button>
             </div>
             <div class="conversations-list" id="conversations-list"></div>
+            <section class="session-memory-panel" id="session-memory-panel">
+                <div class="session-memory-header">
+                    <h3>本场记忆</h3>
+                    <a href="profile.html" class="session-memory-link" title="用户画像">画像</a>
+                </div>
+                <div class="session-memory-body" id="session-memory-body">
+                    <p class="session-memory-empty">选择对话后显示本会话已确认的事实</p>
+                </div>
+            </section>
         </aside>
 
         <main class="main-panel">
@@ -54,7 +64,8 @@
     <script src="js/vendor/purify.min.js?v=4"></script>
     <script src="js/markdown.js?v=4"></script>
     <script src="js/auth.js"></script>
-    <script src="js/chat-app.js?v=6"></script>
+    <script src="js/memory-api.js?v=1"></script>
+    <script src="js/chat-app.js?v=7"></script>
     <script>
         document.addEventListener('DOMContentLoaded', async () => {
             const ok = await Auth.ensureAuthenticated({ redirect: true });

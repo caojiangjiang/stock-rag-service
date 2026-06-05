@@ -15,6 +15,7 @@ import (
 	"stock_rag/internal/auth"
 	"stock_rag/internal/decision"
 	einoagent "stock_rag/internal/eino/agent"
+	"stock_rag/internal/memory"
 	"stock_rag/internal/metrics"
 	personaservice "stock_rag/internal/persona/service"
 	"stock_rag/internal/pkg/httpmiddleware"
@@ -32,7 +33,7 @@ type Route struct {
 }
 
 // NewRouter 注册当前已经接通的 HTTP 路由。
-func NewRouter(querySvc QueryService, taskAgentService *service.TaskAgentService, authService auth.AuthService, jwtSecret string, chatService *agent.ChatService, conversationStore repository.UnifiedConversationStore, postgresDB Pinger, redisClient *redis.Client, coordinatorFactory *einoagent.CoordinatorFactory, portfolioSvc *portfolio.Service, themeSvc *theme.Service, decisionSvc *decision.Service) *http.ServeMux {
+func NewRouter(querySvc QueryService, taskAgentService *service.TaskAgentService, authService auth.AuthService, jwtSecret string, chatService *agent.ChatService, conversationStore repository.UnifiedConversationStore, postgresDB Pinger, redisClient *redis.Client, coordinatorFactory *einoagent.CoordinatorFactory, portfolioSvc *portfolio.Service, themeSvc *theme.Service, decisionSvc *decision.Service, profileSvc *memory.ProfileService) *http.ServeMux {
 	mux := http.NewServeMux()
 
 	// 健康检查端点
@@ -85,7 +86,7 @@ func NewRouter(querySvc QueryService, taskAgentService *service.TaskAgentService
 	mux.HandleFunc("/api/chat", longRunning(requireAuth(chatHandler.Chat)))
 	mux.HandleFunc("/api/chat/stream", longRunning(requireAuth(chatHandler.ChatStream)))
 
-	convHandler := NewConversationHandler(conversationStore)
+	convHandler := NewConversationHandlerWithArchiver(conversationStore, profileSvc)
 	mux.HandleFunc("/api/conversations", requireAuth(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPut {
 			convHandler.UpdateConversation(w, r)
@@ -123,6 +124,15 @@ func NewRouter(querySvc QueryService, taskAgentService *service.TaskAgentService
 		decisionHandler := NewDecisionHandler(decisionSvc)
 		mux.HandleFunc("/api/decision/daily-brief", requireAuth(decisionHandler.DailyBrief))
 		mux.HandleFunc("/api/decision/history/export", requireAuth(decisionHandler.ExportHistory))
+	}
+
+	// 用户画像与会话记忆
+	if profileSvc != nil {
+		memoryHandler := NewMemoryHandler(profileSvc)
+		mux.HandleFunc("/api/memory/profile", requireAuth(memoryHandler.Profile))
+		mux.HandleFunc("/api/memory/preferences", requireAuth(memoryHandler.Preferences))
+		mux.HandleFunc("/api/memory/insights", requireAuth(memoryHandler.DeleteInsight))
+		mux.HandleFunc("/api/memory/session", requireAuth(memoryHandler.Session))
 	}
 
 	// Investment Persona 模块路由

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -11,14 +12,23 @@ import (
 
 // ConversationHandler 处理对话相关的请求
 type ConversationHandler struct {
-	store repository.UnifiedConversationStore
+	store    repository.UnifiedConversationStore
+	archiver ConversationArchiver
+}
+
+// ConversationArchiver 删除会话前归档记忆（可选）。
+type ConversationArchiver interface {
+	ArchiveConversation(ctx context.Context, conversationID, userID string) error
 }
 
 // NewConversationHandler 创建对话处理器
 func NewConversationHandler(store repository.UnifiedConversationStore) *ConversationHandler {
-	return &ConversationHandler{
-		store: store,
-	}
+	return &ConversationHandler{store: store}
+}
+
+// NewConversationHandlerWithArchiver 创建带记忆归档的对话处理器。
+func NewConversationHandlerWithArchiver(store repository.UnifiedConversationStore, archiver ConversationArchiver) *ConversationHandler {
+	return &ConversationHandler{store: store, archiver: archiver}
 }
 
 // ListConversations 获取用户的对话列表
@@ -116,6 +126,16 @@ func (h *ConversationHandler) DeleteConversation(w http.ResponseWriter, r *http.
 	if conversationID == "" {
 		http.Error(w, "缺少 conversation_id", http.StatusBadRequest)
 		return
+	}
+
+	userID := UserIDFromRequest(r.Context())
+	if h.archiver != nil && userID != "" {
+		if err := h.archiver.ArchiveConversation(r.Context(), conversationID, userID); err != nil {
+			if err.Error() == "forbidden" {
+				http.Error(w, "无权删除该对话", http.StatusForbidden)
+				return
+			}
+		}
 	}
 
 	err := h.store.DeleteConversation(r.Context(), conversationID)

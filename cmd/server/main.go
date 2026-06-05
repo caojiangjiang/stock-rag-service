@@ -78,23 +78,26 @@ func main() {
 	authService, jwtSecret := initAuthService(pgConversationStore, redisClient)
 
 	coordinatorSelector := initCoordinatorSelector()
+	mem := initMemory(ctx, redisClient, pgConversationStore, store, embedder)
 	chatService := initChatService(ChatServiceDependencies{
 		ConversationStore:   conversationStore,
 		CoordinatorSelector: coordinatorSelector,
 		TaskAgentService:    taskAgentService,
 		ToolRegistry:        einotools.GetGlobalRegistry(),
 		RedisClient:         redisClient,
+		Memory:              mem,
 	})
 	marketProvider := initMarketProvider()
 	portfolioSvc := initPortfolioService(ctx, pgConversationStore, marketProvider)
 	themeSvc := initThemeService(marketProvider, redisClient)
 	themeSvc.StartBackgroundRefresh(ctx)
 	decisionSvc := initDecisionService(portfolioSvc, themeSvc, redisClient)
+	profileSvc := memory.NewProfileService(mem, portfolioSvc, conversationStore)
 	var pgPool api.Pinger
 	if pgConversationStore != nil {
 		pgPool = pgConversationStore.DB()
 	}
-	mux := api.NewRouter(querySvc, taskAgentService, authService, jwtSecret, chatService, conversationStore, pgPool, redisClient, coordinatorFactory, portfolioSvc, themeSvc, decisionSvc)
+	mux := api.NewRouter(querySvc, taskAgentService, authService, jwtSecret, chatService, conversationStore, pgPool, redisClient, coordinatorFactory, portfolioSvc, themeSvc, decisionSvc, profileSvc)
 
 	// 限流中间件
 	rateLimiter := initRateLimiter(redisClient)
@@ -403,6 +406,36 @@ type ChatServiceDependencies struct {
 	TaskAgentService    *service.TaskAgentService
 	ToolRegistry        *einotools.ToolRegistry
 	RedisClient         *redis.Client
+	Memory              memory.Memory
+}
+
+func initMemory(ctx context.Context, redisClient *redis.Client, pgStore *repository.PostgresConversationStore, vectorStore vectorstore.VectorStore, embedder embedding.Embedder) memory.Memory {
+	memDeps := memory.Dependencies{
+		Redis:       redisClient,
+		VectorStore: vectorStore,
+		Embedder:    embedder,
+	}
+	if pgStore != nil {
+		memDeps.DB = pgStore.DB()
+	}
+	mem := memory.New(memory.DefaultConfig(), memDeps)
+	if err := mem.InitSchema(ctx); err != nil {
+		log.Printf("Warning: memory schema init failed: %v", err)
+	}
+	if mem.Long() != nil {
+		log.Println("Long-term memory initialized (PostgreSQL + vector)")
+	} else {
+		log.Println("Warning: long-term memory disabled (need PostgreSQL + embedder)")
+	}
+	if mem.Medium() != nil {
+		log.Println("Medium-term memory initialized (PostgreSQL)")
+	} else {
+		log.Println("Warning: medium-term memory disabled (need PostgreSQL)")
+	}
+	if mem.Short() != nil {
+		log.Println("Short-term working memory initialized (Redis)")
+	}
+	return mem
 }
 
 func initChatService(deps ChatServiceDependencies) *agent.ChatService {
@@ -445,20 +478,13 @@ func initChatService(deps ChatServiceDependencies) *agent.ChatService {
 		exactCache = cache.NewExactCache(deps.RedisClient, cache.DefaultExactCacheConfig())
 		log.Println("Exact cache initialized for chat service")
 	} else {
-		log.Println("Warning: REDIS_HOST not set, exact cache disabled for chat service")
+		log.Println("Warning: exact cache disabled (no Redis)")
 	}
 
-	// 初始化记忆存储（optional）
-	var mem memory.Memory
-	memDeps := memory.Dependencies{
-		Redis: deps.RedisClient,
-		DB:    nil,
-	}
-	mem = memory.New(memory.DefaultConfig(), memDeps)
-	if deps.RedisClient != nil {
-		log.Println("Working memory (short-term) initialized")
-	} else {
-		log.Println("Warning: memory stores disabled (no Redis)")
+	mem := deps.Memory
+	if mem == nil {
+		mem = memory.New(memory.DefaultConfig(), memory.Dependencies{Redis: deps.RedisClient})
+		log.Println("Warning: chat service using fallback memory facade")
 	}
 
 	if explicit := agent.ExplicitCoordinatorFromEnv(); explicit != "" {

@@ -13,7 +13,7 @@ import (
 	"stock_rag/internal/repository"
 	"stock_rag/internal/vectorstore"
 
-	"github.com/jackc/pgx/v4/pgxpool"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -29,6 +29,8 @@ type Memory interface {
 	AddFact(ctx context.Context, convID string, fact *medium.ConfirmedFact) error
 	GetUser(ctx context.Context, userID string) (*long.UserMemory, error)
 	SearchInsights(ctx context.Context, userID, query string, limit int) ([]*long.Insight, error)
+	UpdateUserPreferences(ctx context.Context, userID string, prefs *long.UserPreferences) error
+	DeleteInsight(ctx context.Context, userID, insightID string) error
 
 	// CompleteSession 会话结束时的记忆沉淀，将会话内容写回长期记忆
 	CompleteSession(ctx context.Context, convID, userID string, messages []*repository.Message) error
@@ -124,6 +126,20 @@ func (f *facade) SearchInsights(ctx context.Context, userID, query string, limit
 	return f.long.SearchInsights(ctx, userID, query, limit)
 }
 
+func (f *facade) UpdateUserPreferences(ctx context.Context, userID string, prefs *long.UserPreferences) error {
+	if f.long == nil {
+		return fmt.Errorf("long-term memory unavailable")
+	}
+	return f.long.UpdatePreferences(ctx, userID, prefs)
+}
+
+func (f *facade) DeleteInsight(ctx context.Context, userID, insightID string) error {
+	if f.long == nil {
+		return fmt.Errorf("long-term memory unavailable")
+	}
+	return f.long.DeleteInsight(ctx, userID, insightID)
+}
+
 func (f *facade) InitSchema(ctx context.Context) error {
 	if f.short != nil {
 		if err := f.short.InitSchema(ctx); err != nil {
@@ -171,11 +187,15 @@ func (f *facade) extractInsightsFromMessages(convID, userID string, messages []*
 	var insights []*long.Insight
 	var assistantMessages []string
 
-	// 收集助手回复
+	// 收集助手回复（跳过无效/工具调用内容）
 	for _, msg := range messages {
-		if msg.Role == "assistant" && msg.Content != "" {
-			assistantMessages = append(assistantMessages, msg.Content)
+		if msg.Role != "assistant" || msg.Content == "" {
+			continue
 		}
+		if !isPersistableInsightContent(msg.Content) {
+			continue
+		}
+		assistantMessages = append(assistantMessages, msg.Content)
 	}
 
 	// 将连续的助手回复合并为一个洞察（避免过于细粒度）
@@ -234,4 +254,20 @@ func (f *facade) generateSummary(content string) string {
 // generateInsightID 生成唯一的洞察ID
 func generateInsightID() string {
 	return fmt.Sprintf("insight-%d", time.Now().UnixNano())
+}
+
+func isPersistableInsightContent(content string) bool {
+	c := strings.TrimSpace(content)
+	if len([]rune(c)) < 16 {
+		return false
+	}
+	if strings.Contains(c, "<|FunctionCallBegin|>") {
+		return false
+	}
+	for _, prefix := range []string{"执行失败", "路由失败", "chat stream failed"} {
+		if strings.HasPrefix(c, prefix) {
+			return false
+		}
+	}
+	return true
 }

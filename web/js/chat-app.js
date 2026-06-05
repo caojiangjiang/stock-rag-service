@@ -127,6 +127,7 @@
       console.error(e);
     }
     await loadConversations(false);
+    await loadSessionMemory(currentConversationID);
     messageInput()?.focus();
   }
 
@@ -134,6 +135,45 @@
     if (emptyState()) emptyState().style.display = 'none';
     chatContainer().innerHTML = '';
     addMessage(text, 'assistant');
+  }
+
+  function formatFactValue(value) {
+    if (value == null) return '—';
+    if (typeof value === 'object') return JSON.stringify(value);
+    return String(value);
+  }
+
+  async function loadSessionMemory(conversationID) {
+    const body = document.getElementById('session-memory-body');
+    if (!body) return;
+    if (!conversationID) {
+      body.innerHTML = '<p class="session-memory-empty">选择对话后显示本会话已确认的事实</p>';
+      return;
+    }
+    body.innerHTML = '<p class="session-memory-empty">加载中…</p>';
+    try {
+      const session = await MemoryAPI.getSessionMemory(conversationID);
+      if (!session.available || !session.confirmed_facts?.length) {
+        const hint = session.medium_term_enabled === false
+          ? '中期记忆未启用（需 PostgreSQL）'
+          : '暂无已确认事实';
+        body.innerHTML = `<p class="session-memory-empty">${hint}</p>`;
+        return;
+      }
+      const factsHtml = session.confirmed_facts.map((f) => `
+        <div class="session-fact">
+          <div class="session-fact-key">${escapeHtml(f.key)}</div>
+          <div class="session-fact-value">${escapeHtml(formatFactValue(f.value))}</div>
+        </div>
+      `).join('');
+      const objectsHtml = session.current_objects?.length
+        ? `<div class="session-objects">当前关注：<span>${session.current_objects.map(escapeHtml).join('、')}</span></div>`
+        : '';
+      body.innerHTML = factsHtml + objectsHtml;
+    } catch (e) {
+      console.error(e);
+      body.innerHTML = '<p class="session-memory-empty">加载失败</p>';
+    }
   }
 
   async function switchConversation(conversationID) {
@@ -166,6 +206,7 @@
     }
 
     renderConversations();
+    await loadSessionMemory(conversationID);
     messageInput()?.focus();
   }
 
@@ -187,6 +228,7 @@
         currentConversationTitle().textContent = '新对话';
         chatContainer().innerHTML = '';
         emptyState().style.display = 'flex';
+        await loadSessionMemory(null);
       }
     }
     renderConversations();
@@ -381,6 +423,7 @@
           addMessage(display, 'assistant', null, true);
         }
         await loadConversations();
+        await loadSessionMemory(currentConversationID);
       } else if (!streaming) {
         addMessage('未收到完整响应，请重试。', 'assistant');
       }
