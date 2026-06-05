@@ -48,6 +48,10 @@ type Store interface {
 	Save(ctx context.Context, memory *WorkingMemory) error
 	Get(ctx context.Context, conversationID string) (*WorkingMemory, error)
 	AppendMessage(ctx context.Context, conversationID string, msg *repository.Message) error
+	GetMessages(ctx context.Context, conversationID string) ([]*repository.Message, error)
+	// SyncMessages 用 Postgres 权威数据回填 Redis 消息窗口（cache miss 时）
+	SyncMessages(ctx context.Context, conversationID string, messages []*repository.Message) error
+	HasMessages(ctx context.Context, conversationID string) (bool, error)
 	UpdateTaskState(ctx context.Context, conversationID string, state *TaskState) error
 	AddEntityReference(ctx context.Context, conversationID string, ref *EntityReference) error
 	GetRecentEntities(ctx context.Context, conversationID string, limit int) ([]*EntityReference, error)

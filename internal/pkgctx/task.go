@@ -27,6 +27,14 @@ type TaskContext struct {
 	CreatedAt           time.Time            `json:"created_at"`
 	UpdatedAt           time.Time            `json:"updated_at"`
 	ConversationSummary *ConversationSummary `json:"conversation_summary"`
+	LongTermFlush       *LongTermFlushState  `json:"long_term_flush,omitempty"`
+}
+
+// LongTermFlushState 记录上次长期记忆沉淀位置，用于判断是否有新增内容。
+type LongTermFlushState struct {
+	MessageCountAtFlush int    `json:"message_count_at_flush"`
+	FactsFingerprint    string `json:"facts_fingerprint"`
+	FlushedAt           int64  `json:"flushed_at"`
 }
 
 // ConversationSummary 对话摘要

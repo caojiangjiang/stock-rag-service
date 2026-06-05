@@ -14,6 +14,8 @@ type ComplexTaskRequest struct {
 	UserMessage     string             `json:"user_message"`
 	StockCode       string             `json:"stock_code"`
 	CoordinatorType string             `json:"coordinator_type,omitempty"`
+	MemoryContext   string             `json:"memory_context,omitempty"`
+	SessionSummary  string             `json:"session_summary,omitempty"`
 	OnChunk         func(string) error // SSE 流式回调
 }
 
@@ -50,6 +52,8 @@ type ComplexTaskExecuteRequest struct {
 	UserMessage     string
 	StockCode       string
 	CoordinatorType string
+	MemoryContext   string
+	SessionSummary  string
 	OnChunk         func(string) error // SSE 流式回调
 }
 
@@ -103,6 +107,8 @@ func (s *TaskAgentService) ExecuteComplexTask(ctx context.Context, req *ComplexT
 		UserMessage:     req.UserMessage,
 		StockCode:       req.StockCode,
 		CoordinatorType: req.CoordinatorType,
+		MemoryContext:   req.MemoryContext,
+		SessionSummary:  req.SessionSummary,
 		OnChunk:         req.OnChunk, // 透传流式回调
 	}
 

@@ -104,6 +104,8 @@ type TaskState struct {
 	CreatedAt            time.Time          `json:"created_at"`
 	UpdatedAt            time.Time          `json:"updated_at"`
 	OnChunk              func(string) error // SSE 流式回调
+	UserMemoryContext    string             `json:"user_memory_context,omitempty"`
+	UserSessionSummary   string             `json:"user_session_summary,omitempty"`
 }
 
 func NewTaskState(conversationID, messageID, userID, userMessage string) *TaskState {

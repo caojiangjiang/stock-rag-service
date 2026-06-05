@@ -325,11 +325,31 @@ func (p *PostgresConversationStore) GetMessagesByConversationID(ctx context.Cont
 }
 
 func (p *PostgresConversationStore) SaveSummary(ctx context.Context, conversationID string, summary *pkgctx.ConversationSummary) error {
-	return nil
+	if conversationID == "" || summary == nil {
+		return nil
+	}
+	taskCtx, err := p.GetContext(ctx, conversationID)
+	if err != nil {
+		if err != ErrNotFound {
+			return err
+		}
+		taskCtx = pkgctx.NewTaskContext()
+		taskCtx.ConversationID = conversationID
+	}
+	taskCtx.ConversationSummary = summary
+	taskCtx.UpdatedAt = time.Now()
+	return p.SaveContext(ctx, conversationID, taskCtx)
 }
 
 func (p *PostgresConversationStore) GetSummary(ctx context.Context, conversationID string) (*pkgctx.ConversationSummary, error) {
-	return nil, ErrNotFound
+	taskCtx, err := p.GetContext(ctx, conversationID)
+	if err != nil {
+		return nil, err
+	}
+	if taskCtx == nil || taskCtx.ConversationSummary == nil {
+		return nil, ErrNotFound
+	}
+	return taskCtx.ConversationSummary, nil
 }
 
 func (p *PostgresConversationStore) SaveContext(ctx context.Context, conversationID string, context *pkgctx.TaskContext) error {
@@ -357,6 +377,9 @@ func (p *PostgresConversationStore) GetContext(ctx context.Context, conversation
 	var contextJSON []byte
 	err := row.Scan(&contextJSON)
 	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, ErrNotFound
+		}
 		return nil, err
 	}
 

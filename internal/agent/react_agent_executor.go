@@ -141,7 +141,7 @@ func (e *ReActAgentExecutor) Execute(ctx context.Context, req *ExecuteRequest) (
 	)
 
 	messages := []*schema.Message{
-		{Role: "system", Content: e.buildSystemPrompt()},
+		{Role: "system", Content: e.buildSystemPrompt(req.MemoryContext, req.SessionSummary)},
 		{Role: "user", Content: e.buildUserPrompt(req)},
 	}
 
@@ -279,10 +279,10 @@ func (e *ReActAgentExecutor) assistantStepMessage(thought, action, actionInput, 
 }
 
 // buildSystemPrompt 构建系统提示词
-func (e *ReActAgentExecutor) buildSystemPrompt() string {
+func (e *ReActAgentExecutor) buildSystemPrompt(memoryContext, sessionSummary string) string {
 	toolDescriptions := e.getToolDescriptions()
 
-	return `你是一个专业的金融分析助手，具备使用工具的能力。
+	prompt := `你是一个专业的金融分析助手，具备使用工具的能力。
 
 ## 工具列表：
 ` + toolDescriptions + `
@@ -307,6 +307,13 @@ func (e *ReActAgentExecutor) buildSystemPrompt() string {
 
 请开始分析用户的问题。
 `
+	if sessionSummary != "" {
+		prompt = sessionSummary + "\n\n" + prompt
+	}
+	if memoryContext != "" {
+		prompt = memoryContext + "\n\n" + prompt
+	}
+	return prompt
 }
 
 func (e *ReActAgentExecutor) getToolDescriptions() string {

@@ -35,6 +35,12 @@ func (e *ChatExecutor) Execute(ctx context.Context, req *ExecuteRequest) (*Execu
 - 使用有序列表（1. 2. 3.）或无序列表（-）分点说明，每条独占一行
 - 重要提示用 **加粗**
 - 段落之间空一行，不要把所有内容挤在同一段里`
+	if req.MemoryContext != "" {
+		systemPrompt += "\n\n" + req.MemoryContext
+	}
+	if req.SessionSummary != "" {
+		systemPrompt += "\n\n" + req.SessionSummary
+	}
 
 	messages := []*schema.Message{
 		{

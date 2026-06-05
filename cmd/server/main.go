@@ -427,11 +427,6 @@ func initMemory(ctx context.Context, redisClient *redis.Client, pgStore *reposit
 	} else {
 		log.Println("Warning: long-term memory disabled (need PostgreSQL + embedder)")
 	}
-	if mem.Medium() != nil {
-		log.Println("Medium-term memory initialized (PostgreSQL)")
-	} else {
-		log.Println("Warning: medium-term memory disabled (need PostgreSQL)")
-	}
 	if mem.Short() != nil {
 		log.Println("Short-term working memory initialized (Redis)")
 	}
@@ -493,7 +488,7 @@ func initChatService(deps ChatServiceDependencies) *agent.ChatService {
 		log.Println("Coordinator selection: automatic (CoordinatorSelector)")
 	}
 
-	return agent.NewChatService(routeEngine, deps.CoordinatorSelector, agentExecutor, deps.ConversationStore, exactCache, mem)
+	return agent.NewChatService(routeEngine, deps.CoordinatorSelector, agentExecutor, deps.ConversationStore, exactCache, mem, llm.GetLLMClient())
 }
 
 // selectModeAgentExecutor 按环境变量选择 ModeAgent 实现。

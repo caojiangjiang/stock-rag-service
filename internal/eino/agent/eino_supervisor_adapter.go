@@ -67,6 +67,8 @@ func (a *CoordinatorSupervisorAdapter) ExecuteComplexTask(ctx context.Context, r
 		attempt := handler.currentRetry + 1
 		taskState = NewTaskState(req.ConversationID, req.MessageID, req.UserID, req.UserMessage)
 		EnrichTaskState(taskState, req.StockCode)
+		taskState.UserMemoryContext = req.MemoryContext
+		taskState.UserSessionSummary = req.SessionSummary
 		taskState.RetryCount = attempt - 1
 		taskState.OnChunk = req.OnChunk // 透传流式回调
 

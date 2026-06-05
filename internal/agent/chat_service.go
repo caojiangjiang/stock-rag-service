@@ -12,11 +12,13 @@ import (
 
 	"stock_rag/internal/cache"
 	einoagent "stock_rag/internal/eino/agent"
+	"stock_rag/internal/concurrency"
 	"stock_rag/internal/memory"
-	"stock_rag/internal/memory/medium"
+	"stock_rag/internal/memory/long"
 	"stock_rag/internal/memory/short"
 	"stock_rag/internal/metrics"
 	"stock_rag/internal/observability"
+	"stock_rag/internal/pkgctx"
 	"stock_rag/internal/repository"
 	"stock_rag/internal/router"
 )
@@ -39,7 +41,8 @@ type chatContext struct {
 	recentMessages  []router.MessageContext
 	summary         string
 	resolvedMessage string
-	confirmedFacts  []*medium.ConfirmedFact
+	sessionSummary  string
+	memoryContext   string
 	executeReq      *ExecuteRequest
 	executeResp     *ExecuteResponse
 	assistantMsg    *repository.Message
@@ -51,7 +54,8 @@ type ChatService struct {
 	executor            *AgentExecutor
 	conversation        repository.UnifiedConversationStore
 	exactCache          *cache.ExactCache // 精确缓存（原始问题MD5匹配）
-	mem                 memory.Memory     // 短/中/长期记忆
+	mem                 memory.Memory     // 短/长期记忆
+	summarizer          *ConversationSummarizer
 }
 
 func NewChatService(
@@ -61,15 +65,21 @@ func NewChatService(
 	conversation repository.UnifiedConversationStore,
 	exactCache *cache.ExactCache,
 	mem memory.Memory,
+	llmClient *concurrency.LLMClient,
 ) *ChatService {
-	return &ChatService{
+	summarizer := NewConversationSummarizer(conversation, llmClient, mem)
+	summarizer.StartBackground(context.Background())
+
+	svc := &ChatService{
 		routeEngine:         routeEngine,
 		coordinatorSelector: coordinatorSelector,
 		executor:            executor,
 		conversation:        conversation,
 		exactCache:          exactCache,
 		mem:                 mem,
+		summarizer:          summarizer,
 	}
+	return svc
 }
 
 type ChatRequest struct {
@@ -226,10 +236,11 @@ func (s *ChatService) initConversationContext(cc *chatContext) (*ChatResponse, e
 		cc.recentMessages = []router.MessageContext{}
 	}
 
-	cc.summary, err = s.getConversationSummary(cc.ctx, cc.convID)
+	cc.summary, cc.sessionSummary, err = s.loadConversationSummaryTexts(cc.ctx, cc.convID)
 	if err != nil {
 		observability.L().ErrorCtx(cc.ctx, "Failed to load conversation summary", err)
 		cc.summary = ""
+		cc.sessionSummary = ""
 	}
 
 	cc.userMsg = repository.NewMessage(cc.convID, cc.req.UserID, "user", cc.req.Message, nil)
@@ -290,6 +301,7 @@ func (s *ChatService) persistUserMessage(cc *chatContext) (*ChatResponse, error)
 		observability.L().ErrorCtx(cc.ctx, "Failed to save user message", err)
 		return chatError(cc.convID, "保存用户消息失败", err)
 	}
+	s.syncMessageToShortTerm(cc.ctx, cc.userMsg)
 
 	observability.L().InfoCtx(cc.ctx, "User message saved",
 		"conversation_id", cc.convID,
@@ -299,18 +311,50 @@ func (s *ChatService) persistUserMessage(cc *chatContext) (*ChatResponse, error)
 	return nil, nil
 }
 
-// loadMemory 加载记忆：短期记忆（指代消解）和中期记忆（已确认事实）
+// loadMemory 加载记忆：短期（指代消解）、长期（偏好+洞察）
 func (s *ChatService) loadMemory(cc *chatContext) (*ChatResponse, error) {
 	cc.resolvedMessage = s.loadShortTermMemory(cc.ctx, cc.convID, cc.req.Message)
-	cc.confirmedFacts = s.loadMediumTermMemory(cc.ctx, cc.convID, cc.req.StockCode)
+	query := cc.resolvedMessage
+	if query == "" {
+		query = cc.req.Message
+	}
+	cc.memoryContext = s.loadLongTermMemory(cc.ctx, cc.req.UserID, query)
 	return nil, nil
+}
+
+func (s *ChatService) loadLongTermMemory(ctx context.Context, userID, query string) string {
+	if s.mem == nil || s.mem.Long() == nil || strings.TrimSpace(userID) == "" {
+		return ""
+	}
+
+	var prefs *long.UserPreferences
+	userMem, err := s.mem.GetUser(ctx, userID)
+	if err != nil {
+		observability.L().WarnCtx(ctx, "Failed to load user long-term memory", "error", err)
+	} else if userMem != nil && userMem.Preferences != nil {
+		prefs = userMem.Preferences
+	}
+
+	insights, err := s.mem.SearchInsights(ctx, userID, strings.TrimSpace(query), 3)
+	if err != nil {
+		observability.L().WarnCtx(ctx, "Failed to search long-term insights", "error", err)
+	}
+
+	ctxText := long.FormatPromptContext(prefs, insights)
+	if ctxText != "" {
+		observability.L().InfoCtx(ctx, "Loaded long-term memory for prompt",
+			"has_preferences", prefs != nil,
+			"insight_count", len(insights),
+		)
+	}
+	return ctxText
 }
 
 // execute 执行请求并处理响应
 func (s *ChatService) execute(cc *chatContext) (*ChatResponse, error) {
 	cc.executeReq = s.buildExecuteRequest(
 		cc.ctx, cc.convID, cc.req, cc.userMsg, cc.routeDecision,
-		cc.resolvedMessage, cc.confirmedFacts, cc.recentMessages, cc.summary, cc.onChunk,
+		cc.resolvedMessage, cc.sessionSummary, cc.memoryContext, cc.recentMessages, cc.summary, cc.onChunk,
 	)
 	if cc.executeReq == nil {
 		return chatError(cc.convID, "协调器选择失败", fmt.Errorf("coordinator selection failed"))
@@ -394,6 +438,10 @@ func (s *ChatService) saveAssistantMessage(cc *chatContext) error {
 	if err := s.conversation.SaveMessage(cc.ctx, cc.assistantMsg); err != nil {
 		return err
 	}
+	s.syncMessageToShortTerm(cc.ctx, cc.assistantMsg)
+	if s.summarizer != nil {
+		s.summarizer.Schedule(cc.convID, cc.req.UserID)
+	}
 
 	observability.L().InfoCtx(cc.ctx, "Assistant message saved",
 		"conversation_id", cc.convID,
@@ -436,16 +484,80 @@ func (s *ChatService) getRecentMessages(ctx context.Context, convID string, coun
 		return []router.MessageContext{}, nil
 	}
 
-	messages, err := s.conversation.GetMessages(ctx, convID, count)
+	messages, fromCache, err := s.loadRecentMessages(ctx, convID, count)
 	if err != nil {
 		return nil, err
 	}
 	if len(messages) == 0 {
 		return []router.MessageContext{}, nil
 	}
+	if !fromCache {
+		s.backfillShortTermMessages(ctx, convID, messages)
+	}
+	return messagesToRouterContext(messages), nil
+}
 
+// loadRecentMessages 优先读 Redis 滑动窗口，miss 时回退 Postgres。
+func (s *ChatService) loadRecentMessages(ctx context.Context, convID string, count int) ([]*repository.Message, bool, error) {
+	if s.mem != nil && s.mem.Short() != nil {
+		cached, err := s.mem.Short().GetMessages(ctx, convID)
+		if err == nil && len(cached) > 0 {
+			return tailMessages(cached, count), true, nil
+		}
+		if err != nil && err != short.ErrNotFound {
+			observability.L().WarnCtx(ctx, "Failed to load messages from short-term memory", "error", err)
+		}
+	}
+
+	messages, err := s.conversation.GetMessages(ctx, convID, count)
+	if err != nil {
+		return nil, false, err
+	}
+	return messages, false, nil
+}
+
+func (s *ChatService) syncMessageToShortTerm(ctx context.Context, msg *repository.Message) {
+	if s.mem == nil || s.mem.Short() == nil || msg == nil {
+		return
+	}
+	if err := s.mem.Short().AppendMessage(ctx, msg.ConversationID, msg); err != nil {
+		observability.L().WarnCtx(ctx, "Failed to sync message to short-term memory",
+			"conversation_id", msg.ConversationID,
+			"message_id", msg.ID,
+			"error", err,
+		)
+	}
+}
+
+func (s *ChatService) backfillShortTermMessages(ctx context.Context, convID string, messages []*repository.Message) {
+	if s.mem == nil || s.mem.Short() == nil || len(messages) == 0 {
+		return
+	}
+	has, err := s.mem.Short().HasMessages(ctx, convID)
+	if err == nil && has {
+		return
+	}
+	if err := s.mem.Short().SyncMessages(ctx, convID, messages); err != nil {
+		observability.L().WarnCtx(ctx, "Failed to backfill short-term messages",
+			"conversation_id", convID,
+			"error", err,
+		)
+	}
+}
+
+func tailMessages(messages []*repository.Message, count int) []*repository.Message {
+	if count <= 0 || len(messages) <= count {
+		return messages
+	}
+	return messages[len(messages)-count:]
+}
+
+func messagesToRouterContext(messages []*repository.Message) []router.MessageContext {
 	result := make([]router.MessageContext, 0, len(messages))
 	for _, msg := range messages {
+		if msg == nil {
+			continue
+		}
 		result = append(result, router.MessageContext{
 			Role:            msg.Role,
 			Content:         msg.Content,
@@ -454,33 +566,21 @@ func (s *ChatService) getRecentMessages(ctx context.Context, convID string, coun
 			CreatedAt:       time.Unix(msg.CreatedAt, 0),
 		})
 	}
-	return result, nil
+	return result
 }
 
-func (s *ChatService) getConversationSummary(ctx context.Context, convID string) (string, error) {
+func (s *ChatService) loadConversationSummaryTexts(ctx context.Context, convID string) (routeText, promptText string, err error) {
 	if convID == "" {
-		return "", nil
+		return "", "", nil
 	}
-
 	summary, err := s.conversation.GetSummary(ctx, convID)
 	if err != nil {
 		if err == repository.ErrNotFound {
-			return "", nil
+			return "", "", nil
 		}
-		return "", err
+		return "", "", err
 	}
-	// 生成摘要文本
-	var summaryText string
-	if summary.CurrentObject != "" {
-		summaryText += "当前对象: " + summary.CurrentObject + "; "
-	}
-	if summary.TimeRange != "" {
-		summaryText += "时间范围: " + summary.TimeRange + "; "
-	}
-	if len(summary.DocTypes) > 0 {
-		summaryText += "文档类型: " + summary.DocTypes[0]
-	}
-	return summaryText, nil
+	return pkgctx.FormatSummaryForRoute(summary), pkgctx.FormatSummaryForPrompt(summary), nil
 }
 
 func (s *ChatService) getLastRouteMode(ctx context.Context, convID string) router.RouteMode {
@@ -581,6 +681,11 @@ func (s *ChatService) checkExactCache(cc *chatContext) *ChatResponse {
 	assistantMsg.RouteMode = string(cc.routeDecision.SelectedMode)
 	if err := s.conversation.SaveMessage(cc.ctx, assistantMsg); err != nil {
 		observability.L().WarnCtx(cc.ctx, "Exact cache assistant save failed", "error", err)
+	} else {
+		s.syncMessageToShortTerm(cc.ctx, assistantMsg)
+	}
+	if s.summarizer != nil {
+		s.summarizer.Schedule(cc.convID, cc.req.UserID)
 	}
 
 	latency := int(time.Since(cc.startTime).Milliseconds())
@@ -637,7 +742,8 @@ func (s *ChatService) buildExecuteRequest(
 	userMsg *repository.Message,
 	routeDecision *router.RouteDecision,
 	resolvedMessage string,
-	confirmedFacts []*medium.ConfirmedFact,
+	sessionSummary string,
+	memoryContext string,
 	recentMessages []router.MessageContext,
 	summary string,
 	onChunk func(string) error,
@@ -654,7 +760,8 @@ func (s *ChatService) buildExecuteRequest(
 		StockCode:       req.StockCode,
 		DocType:         req.DocType,
 		TimeRange:       req.TimeRange,
-		ConfirmedFacts:  confirmedFacts,
+		SessionSummary:  sessionSummary,
+		MemoryContext:   memoryContext,
 	}
 
 	switch routeDecision.SelectedMode {
@@ -676,47 +783,6 @@ func (s *ChatService) buildExecuteRequest(
 	}
 
 	return req2
-}
-
-// loadMediumTermMemory 加载中期记忆：已确认事实
-func (s *ChatService) loadMediumTermMemory(ctx context.Context, convID, stockCode string) []*medium.ConfirmedFact {
-	if s.mem == nil || s.mem.Medium() == nil {
-		return nil
-	}
-
-	sessionCtx, err := s.mem.Medium().Get(ctx, convID)
-	if err != nil || sessionCtx == nil {
-		return nil
-	}
-
-	// 检查是否有待验证的事实
-	pendingFacts, _ := s.mem.Medium().GetPendingFacts(ctx, convID)
-	if len(pendingFacts) > 0 {
-		observability.L().InfoCtx(ctx, "Found pending facts in session context",
-			"count", len(pendingFacts),
-		)
-	}
-
-	// 如果有请求的股票代码，获取相关事实
-	if stockCode == "" {
-		return nil
-	}
-
-	entityFacts, _ := s.mem.Medium().GetFactsByEntity(ctx, convID, stockCode)
-	if len(entityFacts) == 0 {
-		return nil
-	}
-
-	var confirmedFacts []*medium.ConfirmedFact
-	for key, fact := range entityFacts {
-		confirmedFacts = append(confirmedFacts, fact)
-		observability.L().InfoCtx(ctx, "Found confirmed fact",
-			"key", key,
-			"value", fmt.Sprintf("%v", fact.Value),
-		)
-	}
-
-	return confirmedFacts
 }
 
 func deriveLastRouteMode(messages []router.MessageContext) router.RouteMode {

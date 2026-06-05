@@ -43,6 +43,8 @@ func (e *ModeAgentExecutor) Execute(ctx context.Context, req *ExecuteRequest) (*
 		UserMessage:     req.UserMessage,
 		StockCode:       req.StockCode,
 		CoordinatorType: req.CoordinatorType,
+		MemoryContext:   req.MemoryContext,
+		SessionSummary:  req.SessionSummary,
 		OnChunk:         req.OnChunk, // 透传流式回调
 	}
 

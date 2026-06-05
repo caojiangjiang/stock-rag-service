@@ -180,6 +180,12 @@ func ResumeADKWithCheckpoint(
 // UserMessagesFromTask 从 TaskState 构造 ADK 用户消息。
 func UserMessagesFromTask(taskState *TaskState) []adk.Message {
 	userContent := taskState.UserMessage
+	if taskState.UserSessionSummary != "" {
+		userContent = taskState.UserSessionSummary + "\n\n---\n\n" + userContent
+	}
+	if taskState.UserMemoryContext != "" {
+		userContent = taskState.UserMemoryContext + "\n\n---\n\n" + userContent
+	}
 	if taskState.StockCode != "" {
 		userContent += fmt.Sprintf("\n\n股票代码: %s", taskState.StockCode)
 	}

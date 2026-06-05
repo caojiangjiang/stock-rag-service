@@ -6,7 +6,6 @@ import (
 
 	"go.opentelemetry.io/otel/attribute"
 
-	"stock_rag/internal/memory/medium"
 	"stock_rag/internal/observability"
 	"stock_rag/internal/router"
 )
@@ -33,7 +32,8 @@ type ExecuteRequest struct {
 	DocType         string
 	TimeRange       string
 	OnChunk         func(string) error
-	ConfirmedFacts  []*medium.ConfirmedFact
+	MemoryContext   string // 长期记忆：用户偏好 + 相关洞察
+	SessionSummary  string // 本场会话摘要（ConversationSummary）
 }
 
 type ExecuteResponse struct {

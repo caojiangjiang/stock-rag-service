@@ -112,6 +112,12 @@ func (e *RAGExecutor) Execute(ctx context.Context, req *ExecuteRequest) (*Execut
 	}
 
 	systemPrompt := buildRAGPrompt(req.UserMessage, contextBuilder.String())
+	if req.MemoryContext != "" {
+		systemPrompt += "\n\n" + req.MemoryContext
+	}
+	if req.SessionSummary != "" {
+		systemPrompt += "\n\n" + req.SessionSummary
+	}
 
 	messages := []*schema.Message{
 		{
@@ -231,6 +237,12 @@ func (e *AnalysisExecutor) Execute(ctx context.Context, req *ExecuteRequest) (*E
 	}
 
 	systemPrompt := buildAnalysisPrompt(req.UserMessage, contextBuilder.String())
+	if req.MemoryContext != "" {
+		systemPrompt += "\n\n" + req.MemoryContext
+	}
+	if req.SessionSummary != "" {
+		systemPrompt += "\n\n" + req.SessionSummary
+	}
 
 	messages := []*schema.Message{
 		{

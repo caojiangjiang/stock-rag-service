@@ -8,8 +8,8 @@ import (
 
 	"stock_rag/internal/embedding"
 	"stock_rag/internal/memory/long"
-	"stock_rag/internal/memory/medium"
 	"stock_rag/internal/memory/short"
+	"stock_rag/internal/pkgctx"
 	"stock_rag/internal/repository"
 	"stock_rag/internal/vectorstore"
 
@@ -17,16 +17,13 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-// Memory is the unified entry point for short-, medium-, and long-term memory.
+// Memory is the unified entry point for short- and long-term memory.
 type Memory interface {
 	Short() short.Store
-	Medium() medium.Store
 	Long() long.Store
 
 	SaveWorking(ctx context.Context, convID string, wm *short.WorkingMemory) error
 	GetWorking(ctx context.Context, convID string) (*short.WorkingMemory, error)
-	GetSession(ctx context.Context, convID string) (*medium.SessionContext, error)
-	AddFact(ctx context.Context, convID string, fact *medium.ConfirmedFact) error
 	GetUser(ctx context.Context, userID string) (*long.UserMemory, error)
 	SearchInsights(ctx context.Context, userID, query string, limit int) ([]*long.Insight, error)
 	UpdateUserPreferences(ctx context.Context, userID string, prefs *long.UserPreferences) error
@@ -34,6 +31,8 @@ type Memory interface {
 
 	// CompleteSession 会话结束时的记忆沉淀，将会话内容写回长期记忆
 	CompleteSession(ctx context.Context, convID, userID string, messages []*repository.Message) error
+	// CompleteSessionFromSummary 从会话摘要增量沉淀长期记忆（定时/每 N 轮）
+	CompleteSessionFromSummary(ctx context.Context, convID, userID string, summary *pkgctx.ConversationSummary) error
 
 	InitSchema(ctx context.Context) error
 }
@@ -47,9 +46,8 @@ type Dependencies struct {
 }
 
 type facade struct {
-	short  short.Store
-	medium medium.Store
-	long   long.Store
+	short short.Store
+	long  long.Store
 }
 
 // New builds a Memory facade from config and dependencies.
@@ -60,26 +58,19 @@ func New(cfg Config, deps Dependencies) Memory {
 		shortStore = short.NewRedisStoreWithConfig(deps.Redis, cfg.ShortTTL, cfg.ShortMaxMsgs)
 	}
 
-	var mediumStore medium.Store
-	if deps.DB != nil {
-		mediumStore = medium.NewPostgresStoreWithTTL(deps.DB, cfg.MediumTTL)
-	}
-
 	var longStore long.Store
 	if deps.DB != nil && deps.VectorStore != nil && deps.Embedder != nil {
 		longStore = long.NewPostgresVectorStore(deps.DB, deps.VectorStore, deps.Embedder)
 	}
 
 	return &facade{
-		short:  shortStore,
-		medium: mediumStore,
-		long:   longStore,
+		short: shortStore,
+		long:  longStore,
 	}
 }
 
-func (f *facade) Short() short.Store   { return f.short }
-func (f *facade) Medium() medium.Store { return f.medium }
-func (f *facade) Long() long.Store     { return f.long }
+func (f *facade) Short() short.Store { return f.short }
+func (f *facade) Long() long.Store   { return f.long }
 
 func (f *facade) SaveWorking(ctx context.Context, convID string, wm *short.WorkingMemory) error {
 	if f.short == nil {
@@ -96,20 +87,6 @@ func (f *facade) GetWorking(ctx context.Context, convID string) (*short.WorkingM
 		return nil, nil
 	}
 	return f.short.Get(ctx, convID)
-}
-
-func (f *facade) GetSession(ctx context.Context, convID string) (*medium.SessionContext, error) {
-	if f.medium == nil {
-		return nil, nil
-	}
-	return f.medium.Get(ctx, convID)
-}
-
-func (f *facade) AddFact(ctx context.Context, convID string, fact *medium.ConfirmedFact) error {
-	if f.medium == nil {
-		return nil
-	}
-	return f.medium.AddConfirmedFact(ctx, convID, fact)
 }
 
 func (f *facade) GetUser(ctx context.Context, userID string) (*long.UserMemory, error) {
@@ -146,11 +123,6 @@ func (f *facade) InitSchema(ctx context.Context) error {
 			return err
 		}
 	}
-	if f.medium != nil {
-		if err := f.medium.InitSchema(ctx); err != nil {
-			return err
-		}
-	}
 	if f.long != nil {
 		if err := f.long.InitSchema(ctx); err != nil {
 			return err
@@ -180,6 +152,39 @@ func (f *facade) CompleteSession(ctx context.Context, convID, userID string, mes
 	}
 
 	return nil
+}
+
+// CompleteSessionFromSummary 将摘要中的已确认事实增量写入长期记忆。
+func (f *facade) CompleteSessionFromSummary(ctx context.Context, convID, userID string, summary *pkgctx.ConversationSummary) error {
+	if f.long == nil || summary == nil || userID == "" {
+		return nil
+	}
+
+	var entities []string
+	if obj := strings.TrimSpace(summary.CurrentObject); obj != "" {
+		entities = append(entities, obj)
+	}
+
+	var insights []*long.Insight
+	for _, fact := range summary.ConfirmedFacts {
+		fact = strings.TrimSpace(fact)
+		if fact == "" || !isPersistableInsightContent(fact) {
+			continue
+		}
+		insights = append(insights, &long.Insight{
+			InsightID:      generateInsightID(),
+			ConversationID: convID,
+			UserID:         userID,
+			Content:        fact,
+			Summary:        f.generateSummary(fact),
+			Entities:       entities,
+			CreatedAt:      time.Now(),
+		})
+	}
+	if len(insights) == 0 {
+		return nil
+	}
+	return f.long.BatchAddInsights(ctx, userID, insights)
 }
 
 // extractInsightsFromMessages 从对话消息中提取有价值的洞察

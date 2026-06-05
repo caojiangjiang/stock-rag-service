@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"stock_rag/internal/memory/long"
-	"stock_rag/internal/memory/medium"
 	"stock_rag/internal/portfolio"
+	"stock_rag/internal/pkgctx"
 	"stock_rag/internal/repository"
 )
 
@@ -60,10 +60,8 @@ type SessionMemoryResponse struct {
 	ConversationID string                  `json:"conversation_id"`
 	ConfirmedFacts []SessionFactView       `json:"confirmed_facts"`
 	CurrentObjects []string                `json:"current_objects,omitempty"`
-	TimeRange      string                  `json:"time_range,omitempty"`
-	TaskProgress   *medium.TaskProgress    `json:"task_progress,omitempty"`
-	ExpiresAt      *time.Time              `json:"expires_at,omitempty"`
-	Available      bool                    `json:"available"`
+	TimeRange      string            `json:"time_range,omitempty"`
+	Available      bool              `json:"available"`
 }
 
 type SessionFactView struct {
@@ -75,10 +73,12 @@ type SessionFactView struct {
 }
 
 func (s *ProfileService) Capabilities() (longEnabled, mediumEnabled bool) {
-	if s == nil || s.mem == nil {
+	if s == nil {
 		return false, false
 	}
-	return s.mem.Long() != nil, s.mem.Medium() != nil
+	longEnabled = s.mem != nil && s.mem.Long() != nil
+	mediumEnabled = s.conversations != nil
+	return longEnabled, mediumEnabled
 }
 
 func (s *ProfileService) GetProfile(ctx context.Context, userID string) (*ProfileResponse, error) {
@@ -149,45 +149,80 @@ func (s *ProfileService) GetSessionMemory(ctx context.Context, userID, conversat
 	if err := s.ensureConversationOwner(ctx, conversationID, userID); err != nil {
 		return nil, err
 	}
-	if s.mem == nil || s.mem.Medium() == nil {
+	if s.conversations == nil {
 		return resp, nil
 	}
 
-	session, err := s.mem.GetSession(ctx, conversationID)
-	if err != nil || session == nil {
+	summary, err := s.conversations.GetSummary(ctx, conversationID)
+	if err != nil || summary == nil {
 		return resp, nil
 	}
-	if session.UserID != "" && session.UserID != userID {
-		return nil, fmt.Errorf("forbidden")
-	}
 
-	resp.Available = true
-	resp.CurrentObjects = session.CurrentObjects
-	resp.TimeRange = session.TimeRange
-	resp.TaskProgress = session.TaskProgress
-	if !session.ExpiresAt.IsZero() {
-		t := session.ExpiresAt
-		resp.ExpiresAt = &t
-	}
-	for _, fact := range session.ConfirmedFacts {
-		if fact == nil {
+	resp.Available = hasSummaryContent(summary)
+	resp.CurrentObjects = currentObjectsFromSummary(summary)
+	resp.TimeRange = summary.TimeRange
+	for i, fact := range summary.ConfirmedFacts {
+		fact = strings.TrimSpace(fact)
+		if fact == "" {
 			continue
 		}
-		view := SessionFactView{
-			Key:      fact.Key,
-			Value:    fact.Value,
-			Source:   fact.Source,
-			Verified: fact.Verified,
+		resp.ConfirmedFacts = append(resp.ConfirmedFacts, SessionFactView{
+			Key:      fmt.Sprintf("fact_%d", i+1),
+			Value:    fact,
+			Source:   "conversation_summary",
+			Verified: true,
+		})
+	}
+	for i, q := range summary.PendingQuestions {
+		q = strings.TrimSpace(q)
+		if q == "" {
+			continue
 		}
-		if !fact.VerifiedAt.IsZero() {
-			view.VerifiedAt = fact.VerifiedAt.Format(time.RFC3339)
-		}
-		resp.ConfirmedFacts = append(resp.ConfirmedFacts, view)
+		resp.ConfirmedFacts = append(resp.ConfirmedFacts, SessionFactView{
+			Key:      fmt.Sprintf("pending_%d", i+1),
+			Value:    q,
+			Source:   "pending_question",
+			Verified: false,
+		})
 	}
 	return resp, nil
 }
 
-// ArchiveConversation 删除会话前沉淀长期记忆并清理中期记忆。
+func hasSummaryContent(summary *pkgctx.ConversationSummary) bool {
+	if summary == nil {
+		return false
+	}
+	if strings.TrimSpace(summary.CurrentObject) != "" || strings.TrimSpace(summary.TimeRange) != "" {
+		return true
+	}
+	return len(summary.ConfirmedFacts) > 0 || len(summary.PendingQuestions) > 0 || len(summary.DocTypes) > 0
+}
+
+func currentObjectsFromSummary(summary *pkgctx.ConversationSummary) []string {
+	if summary == nil {
+		return nil
+	}
+	obj := strings.TrimSpace(summary.CurrentObject)
+	if obj == "" {
+		return nil
+	}
+	parts := strings.FieldsFunc(obj, func(r rune) bool {
+		return r == ',' || r == '，' || r == '、' || r == ';'
+	})
+	var out []string
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	if len(out) == 0 {
+		return []string{obj}
+	}
+	return out
+}
+
+// ArchiveConversation 删除会话前沉淀长期记忆并清理短期缓存。
 func (s *ProfileService) ArchiveConversation(ctx context.Context, conversationID, userID string) error {
 	if conversationID == "" {
 		return nil
@@ -199,14 +234,20 @@ func (s *ProfileService) ArchiveConversation(ctx context.Context, conversationID
 		return nil
 	}
 
+	if s.mem != nil {
+		if summary, err := s.conversations.GetSummary(ctx, conversationID); err == nil && summary != nil {
+			_ = s.mem.CompleteSessionFromSummary(ctx, conversationID, userID, summary)
+		}
+	}
+
 	messages, err := s.conversations.GetMessages(ctx, conversationID, 500)
 	if err != nil {
 		return err
 	}
 	if s.mem != nil && len(messages) > 0 {
 		_ = s.mem.CompleteSession(ctx, conversationID, userID, messages)
-		if s.mem.Medium() != nil {
-			_ = s.mem.Medium().Delete(ctx, conversationID)
+		if s.mem.Short() != nil {
+			_ = s.mem.Short().Cleanup(ctx, conversationID)
 		}
 	}
 	return nil

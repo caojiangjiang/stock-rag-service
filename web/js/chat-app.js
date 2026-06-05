@@ -154,9 +154,7 @@
     try {
       const session = await MemoryAPI.getSessionMemory(conversationID);
       if (!session.available || !session.confirmed_facts?.length) {
-        const hint = session.medium_term_enabled === false
-          ? '中期记忆未启用（需 PostgreSQL）'
-          : '暂无已确认事实';
+        const hint = '暂无会话摘要，完成几轮对话后自动生成'
         body.innerHTML = `<p class="session-memory-empty">${hint}</p>`;
         return;
       }
