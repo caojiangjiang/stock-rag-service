@@ -34,7 +34,7 @@ type ConfigPersonaService struct {
 }
 
 // NewConfigPersonaService 创建基于配置的 Persona 服务。
-// coordinatorFactory 为 nil 时会创建默认工厂（圆桌使用 DebateCoordinator）。
+// coordinatorFactory 为 nil 时会创建默认工厂（圆桌使用 MultiAgentCoordinator debate 拓扑）。
 func NewConfigPersonaService(configPath string, queryService QueryService, coordinatorFactory *agent.CoordinatorFactory) (*ConfigPersonaService, error) {
 	loader, err := config.NewPersonaConfigLoader(configPath)
 	if err != nil {
@@ -374,7 +374,7 @@ func (s *ConfigPersonaService) Roundtable(ctx context.Context, req *model.Roundt
 		"question_len", questionLen,
 		"question_hash", questionHash)
 
-	// DebateCoordinator：多轮顺序辩论（各角色可见他人发言后再回应）
+	// MultiAgentCoordinator（debate 拓扑）：多轮顺序辩论（各角色可见他人发言后再回应）
 	answers, debateSummary, debateSteps, debateErr := s.runRoundtableDebate(ctx, req, validProfiles, requestID)
 	successCount := len(validProfiles)
 	failedPersonas := []string{}
@@ -410,10 +410,10 @@ func (s *ConfigPersonaService) Roundtable(ctx context.Context, req *model.Roundt
 	var moderationNotice string
 	debateRounds := personaDebateMaxRounds()
 	if len(failedPersonas) > 0 {
-		moderationNotice = fmt.Sprintf("辩论协调部分失败（%d 轮 DebateCoordinator，%d 步），以下参与者降级为独立回答：%s。",
+		moderationNotice = fmt.Sprintf("辩论协调部分失败（%d 轮 MultiAgentCoordinator，%d 步），以下参与者降级为独立回答：%s。",
 			debateRounds, debateSteps, strings.Join(failedPersonas, ", "))
 	} else if debateErr == nil {
-		moderationNotice = fmt.Sprintf("经 %d 轮投资圆桌辩论（DebateCoordinator，共 %d 步）后综合各方观点。", debateRounds, debateSteps)
+		moderationNotice = fmt.Sprintf("经 %d 轮投资圆桌辩论（MultiAgentCoordinator，共 %d 步）后综合各方观点。", debateRounds, debateSteps)
 		if strings.TrimSpace(debateSummary) != "" {
 			moderationNotice += " 主持摘要已纳入共识分析。"
 		}

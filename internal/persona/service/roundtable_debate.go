@@ -172,7 +172,7 @@ func roundtableUseRAG() bool {
 func newDefaultCoordinatorFactory() *einoagent.CoordinatorFactory {
 	registry := einoagent.NewProfileRegistry()
 	builder := einoagent.NewAgentBuilder(nil)
-	return einoagent.NewCoordinatorFactory(registry, builder)
+	return einoagent.NewCoordinatorFactory(registry, builder, nil, nil)
 }
 
 func (s *ConfigPersonaService) runRoundtableDebate(
@@ -188,16 +188,16 @@ func (s *ConfigPersonaService) runRoundtableDebate(
 
 	coord, err := factory.Create(einoagent.CoordinatorTypeDebate)
 	if err != nil {
-		return nil, "", 0, fmt.Errorf("create debate coordinator: %w", err)
+		return nil, "", 0, fmt.Errorf("create multi-agent coordinator: %w", err)
 	}
-	debate, ok := coord.(*einoagent.DebateCoordinator)
+	multi, ok := coord.(*einoagent.MultiAgentCoordinator)
 	if !ok {
-		return nil, "", 0, fmt.Errorf("coordinator is not DebateCoordinator")
+		return nil, "", 0, fmt.Errorf("coordinator is not MultiAgentCoordinator")
 	}
 
 	agentProfiles := personaProfilesToAgentProfiles(validProfiles)
-	debate.SetAgentProfiles(agentProfiles)
-	debate.SetMaxRounds(personaDebateMaxRounds())
+	multi.SetAgentProfiles(agentProfiles)
+	multi.SetMaxRounds(personaDebateMaxRounds())
 
 	gen := &personaDebateGenerator{
 		service:        s,
@@ -208,12 +208,12 @@ func (s *ConfigPersonaService) runRoundtableDebate(
 		requestID:      requestID,
 		finalArguments: make(map[string]string, len(validProfiles)),
 	}
-	debate.SetArgumentGenerator(gen)
+	multi.SetArgumentGenerator(gen)
 
 	taskState := einoagent.NewTaskState("persona-roundtable", requestID, "", req.Question)
 	taskState.TimeRange = req.TimeRange
 
-	summary, execErr := debate.Execute(ctx, taskState)
+	summary, execErr := multi.Execute(ctx, taskState)
 	if execErr != nil {
 		return nil, summary, len(taskState.StepTraces), execErr
 	}
@@ -229,7 +229,7 @@ func (s *ConfigPersonaService) runRoundtableDebate(
 	return answers, summary, len(taskState.StepTraces), nil
 }
 
-// roundtableFanoutFallback 在 DebateCoordinator 失败时降级为并行独立 Chat。
+// roundtableFanoutFallback 在 MultiAgentCoordinator 失败时降级为并行独立 Chat。
 func (s *ConfigPersonaService) roundtableFanoutFallback(
 	ctx context.Context,
 	req *model.RoundtableRequest,

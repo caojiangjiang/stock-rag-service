@@ -16,6 +16,8 @@ func ExplicitCoordinatorFromEnv() einoagent.CoordinatorType {
 		return einoagent.CoordinatorTypePipeline
 	case "workflow":
 		return einoagent.CoordinatorTypeWorkflow
+	case "multi_agent":
+		return einoagent.CoordinatorTypeMultiAgent
 	case "peer":
 		return einoagent.CoordinatorTypePeer
 	case "debate":

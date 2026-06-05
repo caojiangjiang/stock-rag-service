@@ -342,7 +342,7 @@ func defaultCoordinatorRules() []CoordinatorRule {
 			Type:       CoordinatorTypePipeline,
 			Keywords:   []string{"固定流程", "标准流程", "按流程", "流水线", "依次", "先收集再分析", "检索后分析再总结"},
 			Confidence: 0.88,
-			Reason:     "命中 Pipeline 关键词",
+			Reason:     "命中固定串行流程关键词（映射 plan fixed steps）",
 		},
 		{
 			Name:       "coordinator_workflow",
@@ -356,21 +356,21 @@ func defaultCoordinatorRules() []CoordinatorRule {
 			Type:       CoordinatorTypeDebate,
 			Keywords:   []string{"辩论", "正反", "多空", "争议", "看涨看跌", "支持与反对"},
 			Confidence: 0.85,
-			Reason:     "命中 Debate 关键词",
+			Reason:     "命中 Debate 关键词（映射 multi_agent debate）",
 		},
 		{
 			Name:       "coordinator_committee",
 			Type:       CoordinatorTypeCommittee,
 			Keywords:   []string{"合议", "委员会", "投票", "一致意见", "综合各方"},
 			Confidence: 0.85,
-			Reason:     "命中 Committee 关键词",
+			Reason:     "命中 Committee 关键词（映射 multi_agent committee）",
 		},
 		{
 			Name:       "coordinator_peer",
 			Type:       CoordinatorTypePeer,
 			Keywords:   []string{"并行分析", "独立分析", "多角度", "协商", "对等", "各自给出"},
 			Confidence: 0.83,
-			Reason:     "命中 Peer 关键词",
+			Reason:     "命中 Peer 关键词（映射 multi_agent parallel）",
 		},
 		{
 			Name:       "coordinator_supervisor_compare",

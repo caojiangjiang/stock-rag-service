@@ -1,4 +1,6 @@
 # 协调器规则配置
+# 核心类型（5 种）：supervisor / plan / workflow / multi_agent / deep
+# 兼容别名（factory 自动映射）：pipeline->plan(fixed), peer/debate/committee->multi_agent
 # 规则优先级：按顺序匹配，取置信度最高的规则
 # 修改后可通过热更新接口重新加载，无需重启服务
 
@@ -29,7 +31,7 @@ rules:
       - "先收集再分析"
       - "检索后分析再总结"
     confidence: 0.88
-    reason: "命中 Pipeline 关键词"
+    reason: "命中固定串行流程关键词（映射 plan fixed steps）"
     min_complexity: 0.0
 
   - name: "coordinator_workflow"
@@ -54,7 +56,7 @@ rules:
       - "看涨看跌"
       - "支持与反对"
     confidence: 0.85
-    reason: "命中 Debate 关键词"
+    reason: "命中 Debate 关键词（映射 multi_agent debate）"
     min_complexity: 0.0
 
   - name: "coordinator_committee"
@@ -66,7 +68,7 @@ rules:
       - "一致意见"
       - "综合各方"
     confidence: 0.85
-    reason: "命中 Committee 关键词"
+    reason: "命中 Committee 关键词（映射 multi_agent committee）"
     min_complexity: 0.0
 
   - name: "coordinator_peer"
@@ -79,7 +81,7 @@ rules:
       - "对等"
       - "各自给出"
     confidence: 0.83
-    reason: "命中 Peer 关键词"
+    reason: "命中 Peer 关键词（映射 multi_agent parallel）"
     min_complexity: 0.0
 
   - name: "coordinator_supervisor_compare"

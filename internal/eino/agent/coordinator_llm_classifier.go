@@ -21,15 +21,18 @@ type CoordinatorLLMClassifierImpl struct {
 func NewCoordinatorLLMClassifier(llmClient *concurrency.LLMClient) *CoordinatorLLMClassifierImpl {
 	prompt := `你是一个智能协调器分类器，请根据用户对话内容判断应该使用哪种协调器类型。
 
-可用协调器类型：
+核心协调器类型（5 种）：
 1. supervisor - 单轮监督式任务，简单分析或工具调用
-2. plan - 需要多步骤规划的复杂任务，如分步骤分析、多阶段处理
-3. pipeline - 固定流程任务，按顺序执行多个步骤
-4. workflow - 工作流模板任务，使用预设模板生成标准化输出
-5. debate - 辩论式分析，需要正反方观点对比
-6. committee - 合议式分析，综合多个独立分析结果
-7. peer - 并行独立分析，多个分析师独立工作后协商
-8. deep - 深度研究任务，需要全面详尽的分析
+2. plan - 多步骤任务；固定串行流程（原 pipeline）也选 plan
+3. workflow - 工作流模板任务，使用预设模板生成标准化输出
+4. multi_agent - 多 Agent 协作；辩论选 debate 别名，并行分析选 peer，合议选 committee
+5. deep - 深度研究任务，需要全面详尽的分析
+
+兼容别名（系统自动映射，可直接输出）：
+- pipeline -> plan（固定串行步骤）
+- peer -> multi_agent（并行独立分析）
+- debate -> multi_agent（多轮辩论）
+- committee -> multi_agent（串行评估+主席决策）
 
 请按以下JSON格式输出：
 {
@@ -44,7 +47,7 @@ func NewCoordinatorLLMClassifier(llmClient *concurrency.LLMClient) *CoordinatorL
 
 约束条件：
 - 需要分步骤完成的复杂任务选 plan
-- 固定流程或标准流程选 pipeline
+- 固定流程或标准流程选 plan 或 pipeline
 - 需要正反方辩论选 debate
 - 需要多角度独立分析选 peer 或 committee
 - 深度研究报告选 deep

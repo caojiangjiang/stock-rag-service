@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/cloudwego/eino/adk"
+
 	"stock_rag/internal/eino/tools"
 )
 
@@ -14,47 +16,116 @@ type Coordinator interface {
 	SetAgentProfiles(profiles []*AgentProfile)
 }
 
+// ResumableCoordinator 支持 HITL 中断后恢复。
+type ResumableCoordinator interface {
+	Coordinator
+	Resume(ctx context.Context, taskState *TaskState, interruptID string, resumeData any) (string, error)
+}
+
 type CoordinatorType string
 
 const (
 	CoordinatorTypeSupervisor CoordinatorType = "supervisor"
-	CoordinatorTypePipeline   CoordinatorType = "pipeline"
-	CoordinatorTypeWorkflow   CoordinatorType = "workflow"
 	CoordinatorTypePlan       CoordinatorType = "plan"
-	CoordinatorTypePeer       CoordinatorType = "peer"
-	CoordinatorTypeDebate     CoordinatorType = "debate"
-	CoordinatorTypeCommittee  CoordinatorType = "committee"
+	CoordinatorTypeWorkflow   CoordinatorType = "workflow"
+	CoordinatorTypeMultiAgent CoordinatorType = "multi_agent"
 	CoordinatorTypeDeep       CoordinatorType = "deep"
+
+	// Deprecated: 兼容旧 API，Create 时自动映射到上述类型。
+	CoordinatorTypePipeline  CoordinatorType = "pipeline"  // -> plan (fixed steps)
+	CoordinatorTypePeer      CoordinatorType = "peer"      // -> multi_agent (parallel)
+	CoordinatorTypeDebate    CoordinatorType = "debate"    // -> multi_agent (debate)
+	CoordinatorTypeCommittee CoordinatorType = "committee" // -> multi_agent (committee)
 )
 
-type CoordinatorFactory struct {
-	profileRegistry *ProfileRegistry
-	agentBuilder    *AgentBuilder
+// CoordinatorCreateOptions 协调器创建选项（由 NormalizeCoordinatorType 解析）。
+type CoordinatorCreateOptions struct {
+	PlanFixedSteps     bool
+	MultiAgentTopology MultiAgentTopology
 }
 
-func NewCoordinatorFactory(profileRegistry *ProfileRegistry, agentBuilder *AgentBuilder) *CoordinatorFactory {
-	return &CoordinatorFactory{
-		profileRegistry: profileRegistry,
-		agentBuilder:    agentBuilder,
+// NormalizeCoordinatorType 将协调器类型规范化为 5 种核心类型及创建选项。
+func NormalizeCoordinatorType(coordinatorType CoordinatorType) (CoordinatorType, CoordinatorCreateOptions) {
+	opts := CoordinatorCreateOptions{}
+	switch coordinatorType {
+	case CoordinatorTypePipeline:
+		return CoordinatorTypePlan, CoordinatorCreateOptions{PlanFixedSteps: true}
+	case CoordinatorTypePeer:
+		return CoordinatorTypeMultiAgent, CoordinatorCreateOptions{MultiAgentTopology: TopologyParallel}
+	case CoordinatorTypeDebate:
+		return CoordinatorTypeMultiAgent, CoordinatorCreateOptions{MultiAgentTopology: TopologyDebate}
+	case CoordinatorTypeCommittee:
+		return CoordinatorTypeMultiAgent, CoordinatorCreateOptions{MultiAgentTopology: TopologyCommittee}
+	default:
+		return coordinatorType, opts
 	}
 }
 
-func (f *CoordinatorFactory) Create(coordinatorType CoordinatorType) (Coordinator, error) {
+// IsDeprecatedCoordinatorType 是否为已废弃的协调器类型别名。
+func IsDeprecatedCoordinatorType(coordinatorType CoordinatorType) bool {
 	switch coordinatorType {
+	case CoordinatorTypePipeline, CoordinatorTypePeer, CoordinatorTypeDebate, CoordinatorTypeCommittee:
+		return true
+	default:
+		return false
+	}
+}
+
+type CoordinatorFactory struct {
+	profileRegistry       *ProfileRegistry
+	agentBuilder          *AgentBuilder
+	checkPointStore       adk.CheckPointStore
+	interruptSessionStore InterruptSessionStore
+}
+
+func NewCoordinatorFactory(
+	profileRegistry *ProfileRegistry,
+	agentBuilder *AgentBuilder,
+	checkPointStore adk.CheckPointStore,
+	interruptSessionStore InterruptSessionStore,
+) *CoordinatorFactory {
+	if checkPointStore == nil {
+		checkPointStore = NewInMemoryADKCheckPointStore()
+	}
+	if interruptSessionStore == nil {
+		interruptSessionStore = NewInMemoryInterruptSessionStore()
+	}
+	return &CoordinatorFactory{
+		profileRegistry:       profileRegistry,
+		agentBuilder:          agentBuilder,
+		checkPointStore:       checkPointStore,
+		interruptSessionStore: interruptSessionStore,
+	}
+}
+
+func (f *CoordinatorFactory) CheckPointStore() adk.CheckPointStore {
+	return f.checkPointStore
+}
+
+func (f *CoordinatorFactory) InterruptSessionStore() InterruptSessionStore {
+	return f.interruptSessionStore
+}
+
+func (f *CoordinatorFactory) Create(coordinatorType CoordinatorType) (Coordinator, error) {
+	normalized, opts := NormalizeCoordinatorType(coordinatorType)
+
+	switch normalized {
 	case CoordinatorTypeSupervisor:
-		return NewSupervisorCoordinator(f.profileRegistry, f.agentBuilder), nil
-	case CoordinatorTypePipeline:
-		return NewPipelineCoordinator(f.profileRegistry, f.agentBuilder), nil
+		return NewSupervisorCoordinator(f.profileRegistry, f.agentBuilder, f.checkPointStore, f.interruptSessionStore), nil
+	case CoordinatorTypePlan:
+		pc := NewPlanCoordinator(f.profileRegistry, f.agentBuilder, f.checkPointStore, f.interruptSessionStore)
+		if opts.PlanFixedSteps {
+			pc.SetFixedSteps(true)
+		}
+		return pc, nil
 	case CoordinatorTypeWorkflow:
 		return NewWorkflowCoordinator(f.profileRegistry, f.agentBuilder), nil
-	case CoordinatorTypePlan:
-		return NewPlanCoordinator(f.profileRegistry, f.agentBuilder), nil
-	case CoordinatorTypePeer:
-		return NewPeerCoordinator(f.profileRegistry, f.agentBuilder), nil
-	case CoordinatorTypeDebate:
-		return NewDebateCoordinator(f.profileRegistry, f.agentBuilder), nil
-	case CoordinatorTypeCommittee:
-		return NewCommitteeCoordinator(f.profileRegistry, f.agentBuilder), nil
+	case CoordinatorTypeMultiAgent:
+		mc := NewMultiAgentCoordinator(f.profileRegistry, f.agentBuilder)
+		if opts.MultiAgentTopology != "" {
+			mc.SetTopology(opts.MultiAgentTopology)
+		}
+		return mc, nil
 	case CoordinatorTypeDeep:
 		return NewDeepCoordinator(f.profileRegistry, f.agentBuilder), nil
 	default:

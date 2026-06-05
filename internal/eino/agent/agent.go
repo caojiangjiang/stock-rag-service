@@ -25,7 +25,7 @@ import (
 //
 // 建议迁移到：
 //   - Coordinator 接口 (coordinator.go)
-//   - SupervisorCoordinator / PlanCoordinator / PipelineCoordinator
+//   - SupervisorCoordinator / PlanCoordinator / MultiAgentCoordinator / WorkflowCoordinator
 //   - ToolRegistry (internal/eino/tools/registry.go)
 //   - Eino ADK 原生组件
 
